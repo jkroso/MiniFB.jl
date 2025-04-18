@@ -10,8 +10,9 @@
   height::px=0px
 end
 
-function Window(f::Function, title::String, (x,y))
+function Window(f::Function, title::String, (x,y), rate=60)
   window = minifb_window_new(title, int(x), int(y), resizable=true)
+  minifb_window_set_target_fps(window, rate)
   t = errormonitor(@async begin
     while isopen(window)
       buffer = invokelatest(f, self)
