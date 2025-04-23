@@ -31,7 +31,7 @@ in vec2 TexCoord;
 out vec4 FragColor;
 uniform sampler2D texture1;
 void main() {
-    FragColor = texture(texture1, TexCoord);
+    FragColor = texture(texture1, vec2(TexCoord.y, TexCoord.x));
 }
 """
 
@@ -290,15 +290,17 @@ Base.open(w::AbstractWindow) = begin
   end)
 end
 
-rgba(c::Colorant) = reinterpret(NTuple{4,UInt8}, RGBA{Colors.N0f8}(c))
-rgba(c::UInt32) = reinterpret(NTuple{4,UInt8}, c)
+unpack(c::Colorant) = reinterpret(NTuple{4,UInt8}, RGBA{Colors.N0f8}(c))
+unpack(c::UInt32) = reinterpret(NTuple{4,UInt8}, c)
+unpack(m::AbstractMatrix) = unpack.(m)
+unpack(m::AbstractMatrix{RGBA{Colors.N0f8}}) = reinterpret(NTuple{4,UInt8}, m)
 
 redraw(w::AbstractWindow) = begin
   window, texture, shaderProgram, VAO, VBO, EBO = w.glfw
   GLFW.MakeContextCurrent(window)
   image = invokelatest(frame, w)
   y,x = size(image)
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, map(rgba, image'))
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, y, x, 0, GL_RGBA, GL_UNSIGNED_BYTE, unpack(image))
   glUseProgram(shaderProgram)
   glBindTexture(GL_TEXTURE_2D, texture[])
   glBindVertexArray(VAO[])

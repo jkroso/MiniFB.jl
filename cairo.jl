@@ -40,7 +40,7 @@ function drawing(f::Function, SIZE)
   Cairo.scale(ctx, 2, 2) # doubling the size of the canvas result in much crisper lines
   f(ctx, map(i->convert(px, i), SIZE))
   bytes=unsafe_wrap(Array, Cairo.image_surface_get_data(ctx.surface), (2x, 2y))
-  reinterpret(ARGB32, bytes') # cairo is row major so we need to swap dimensions
+  reinterpret(ARGB32, permutedims(bytes)) # cairo is row major so we need to swap dimensions
 end
 
 function arc(ctx, center, size, start, stop)

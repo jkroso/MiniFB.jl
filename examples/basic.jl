@@ -15,4 +15,4 @@ end
 # close when esc is pressed
 onkey(w::Window, ::KeyPress{Keys.escape}) = close(w)
 
-open(Window(title="Red and Blue", size=[100mm,100mm], animating=true))
+open(Window(title="Red and Blue", size=[250mm,30mm], animating=true))
