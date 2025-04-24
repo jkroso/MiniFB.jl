@@ -5,33 +5,17 @@
 window = Window(
   title="Window Control",
   size=[300px, 200px],
-  position=[500mm, 200mm],
+  position=[200mm, 200mm],
   animating=true)
-
-# Movement and sizing speed per frame
-const SPEED = 1mm
 
 # Generate a color gradient based on window position and handle continuous key actions
 function frame(w::Window)
-  # Handle continuous movement and resizing based on keys
-  Keys.left in w.keys && (w.position -= Vec2(SPEED, 0px))
-  Keys.right in w.keys && (w.position += Vec2(SPEED, 0px))
-  Keys.up in w.keys && (w.position -= Vec2(0px, SPEED))
-  Keys.down in w.keys && (w.position += Vec2(0px, SPEED))
-  Keys.equal in w.keys && (w.size += Vec2(SPEED, SPEED))
-  if Keys.minus in w.keys
-    # Prevent window from getting too small
-    if w.size[1] > 100px && w.size[2] > 100px
-      w.size -= Vec2(SPEED, SPEED)
-    end
-  end
-
   # Normalize position (0-1 range)
   x_norm,y_norm = w.position/1000px # should divide be screen width - window width
   r = clamp(x_norm, 0.2, 0.8)
   g = clamp(y_norm, 0.2, 0.8)
   b = 0.5
-  fill(RGB(r, g, b), w.buffer_size)
+  fill!(w.buffer, RGB(r, g, b))
 end
 
 # Called when window position changes
@@ -48,7 +32,17 @@ end
 
 onkey(w::Window, ::KeyPress{Keys.escape}) = close(w)
 
-# Reset controls
+const SPEED = 20px
+onkey(w::Window, ::KeyPress{Keys.left}) = w.position -= Vec2(SPEED, 0px)
+onkey(w::Window, ::KeyPress{Keys.right}) = w.position += Vec2(SPEED, 0px)
+onkey(w::Window, ::KeyPress{Keys.up}) = w.position -= Vec2(0px, SPEED)
+onkey(w::Window, ::KeyPress{Keys.down}) = w.position += Vec2(0px, SPEED)
+onkey(w::Window, ::KeyPress{Keys.equal}) = w.size += Vec2(SPEED, SPEED)
+onkey(w::Window, ::KeyPress{Keys.minus}) =  begin
+  @show w.size-Vec2(SPEED, SPEED), Vec2(100px, 100px)
+  w.size = max(w.size-Vec2(SPEED, SPEED), Vec2(100px, 100px))
+end
+
 function onkey(w::Window, ::KeyPress{Keys.r})
   w.position = Vec2(100px, 100px)
   w.size = Vec2(300px, 200px)
@@ -68,4 +62,4 @@ The background color changes based on window position.
 All movement and resize controls work continuously while keys are pressed.
 """)
 
-open(window)
+wait(open(window))

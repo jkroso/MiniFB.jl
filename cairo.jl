@@ -58,3 +58,5 @@ function text(ctx, pos, font, size, color, str)
 end
 
 text(ctx, pos, font::Font, color, str) = text(ctx, pos, font.family, font.size, color, str)
+
+export text,arc,drawing,path,rectangle,stroke,fill,set_color

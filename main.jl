@@ -262,7 +262,7 @@ Base.open(w::AbstractWindow) = begin
     glViewport(0, 0, width, height)
     newsize = (width, height)
     invokelatest(onbuffer_resize, w, newsize)
-    w.buffer = Matric{RGBA{Colors.N0f8}}(undef, height, width)
+    w.buffer = Matrix{RGBA{Colors.N0f8}}(undef, height, width)
   end)
 
   GLFW.SetWindowSizeCallback(window, function(window, width, height)
@@ -359,3 +359,6 @@ cleanup(w::AbstractWindow) = begin
 end
 
 Base.close(w::AbstractWindow) = GLFW.SetWindowShouldClose(w.glfw[1], true)
+
+export Window, AbstractWindow, frame, redraw, onkey, KeyPress, KeyRelease, Keys, onopen, onmouse, onresize,
+       onreposition, Cursor
