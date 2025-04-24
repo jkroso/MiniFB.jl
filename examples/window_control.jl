@@ -8,8 +8,25 @@ window = Window(
   position=[100px, 100px],
   animating=true)
 
-# Generate a color gradient based on window position
+# Movement and sizing speed (px per frame)
+const MOVE_SPEED = 5px
+const SIZE_SPEED = 5px
+
+# Generate a color gradient based on window position and handle continuous key actions
 function frame(w::Window)
+  # Handle continuous movement and resizing based on keys
+  Keys.left in w.keys && (w.position -= Vec2(MOVE_SPEED, 0px))
+  Keys.right in w.keys && (w.position += Vec2(MOVE_SPEED, 0px))
+  Keys.up in w.keys && (w.position -= Vec2(0px, MOVE_SPEED))
+  Keys.down in w.keys && (w.position += Vec2(0px, MOVE_SPEED))
+  Keys.equal in w.keys && (w.size += Vec2(SIZE_SPEED, SIZE_SPEED))
+  if Keys.minus in w.keys
+    # Prevent window from getting too small
+    if w.size[1] > 100px && w.size[2] > 100px
+      w.size -= Vec2(SIZE_SPEED, SIZE_SPEED)
+    end
+  end
+
   # Normalize position (0-1 range)
   x_norm,y_norm = w.position/1000px # should divide be screen width - window width
   r = clamp(x_norm, 0.2, 0.8)
@@ -30,40 +47,26 @@ function onresize(w::Window, size::Vec2{px})
   println("Window resized by: $(delta[1]), $(delta[2])")
 end
 
-# Keyboard controls
-function onkey(w::Window, event)
-  if event isa KeyPress{Keys.escape}
-    close(w)
-  elseif event isa KeyPress{Keys.left}
-    w.position -= Vec2(20px, 0px) # Move left 20px
-  elseif event isa KeyPress{Keys.right}
-    w.position += Vec2(20px, 0px) # Move right 20px
-  elseif event isa KeyPress{Keys.up}
-    w.position -= Vec2(0px, 20px) # Move up 20px
-  elseif event isa KeyPress{Keys.down}
-    w.position += Vec2(0px, 20px) # Move down 20px
-  elseif event isa KeyPress{Keys.equal}
-    w.size += Vec2(20px, 20px) # Increase size
-  elseif event isa KeyPress{Keys.minus}
-    w.size -= Vec2(20px, 20px) # Decrease size
-  elseif event isa KeyPress{Keys.r}
-    # Reset position and size
-    w.position = Vec2(100px, 100px)
-    w.size = Vec2(300px, 200px)
-    println("Window reset")
-  end
+onkey(w::Window, ::KeyPress{Keys.escape}) = close(w)
+
+# Reset controls
+function onkey(w::Window, ::KeyPress{Keys.r})
+  w.position = Vec2(100px, 100px)
+  w.size = Vec2(300px, 200px)
+  println("Window reset")
 end
 
 println("""
 Window Control Example
 ---------------------
 Controls:
-- Arrow keys: Move window
-- Plus/Minus: Resize window
+- Arrow keys: Move window (hold key for continuous movement)
+- Plus/Minus: Resize window (hold key for continuous resizing)
 - R: Reset position and size
 - ESC: Close window
 
 The background color changes based on window position.
+All movement and resize controls work continuously while keys are pressed.
 """)
 
 open(window)
