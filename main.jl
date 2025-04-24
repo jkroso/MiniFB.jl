@@ -115,7 +115,7 @@ end
   title::String=""
   scale::Float32=2.0 # For some reason computers have an internal pixel size that differs from the size of the actual pixels
   size::Vec2{px}=Vec2(0px, 0px)
-  buffer_size::Tuple{Int,Int}=(0, 0)
+  buffer_size::Tuple{Int32,Int32}=(0, 0)
   position::Vec2{px}=Vec2(0px, 0px)
   mouse::Vec2{px}=Vec2(0px, 0px)
   keys::Keys=Keys(0)
@@ -128,6 +128,18 @@ Base.setproperty!(w::AbstractWindow, ::Field{:cursor}, cursor) = begin
   setfield!(w, :cursor, c)
   change_cursor(w, c)
   cursor
+end
+
+Base.setproperty!(w::AbstractWindow, ::Field{:position}, position) = begin
+  isempty(w.glfw) || GLFW.SetWindowPos(w.glfw[1], int(position[1]), int(position[2]))
+  setfield!(w, :position, position)
+  position
+end
+
+Base.setproperty!(w::AbstractWindow, ::Field{:size}, size) = begin
+  isempty(w.glfw) || GLFW.SetWindowSize(w.glfw[1], int(size[1]), int(size[2]))
+  setfield!(w, :size, size)
+  size
 end
 
 tocursor(c::GLFW.StandardCursorShape) = GLFW.CreateStandardCursor(c)
@@ -152,7 +164,7 @@ int(x) = x
 onbuffer_resize(window, newsize) = nothing
 
 "Called whenever the window is resized (window size change)"
-onresize(window, newsize}) = nothing
+onresize(window, newsize) = nothing
 
 abstract type KeyEvent{key} end
 struct KeyPress{key} <: KeyEvent{key}
@@ -190,7 +202,8 @@ Base.open(w::AbstractWindow) = begin
   GLFW.SwapInterval(1)
   GLFW.ShowWindow(window)
   w.scale = GLFW.GetWindowContentScale(window)[1]
-  w.buffer_size = (round(Int, width*w.scale), round(Int, height*w.scale))
+  bx,by = GLFW.GetFramebufferSize(window)
+  w.buffer_size = (bx, by)
   x, y = GLFW.GetWindowPos(window)
   w.position = Vec2{px}(px(x), px(y))
 
@@ -246,9 +259,9 @@ Base.open(w::AbstractWindow) = begin
 
   GLFW.SetFramebufferSizeCallback(window, function(window, width, height)
     glViewport(0, 0, width, height)
-    newsize = Vec2{px}(px(width/w.scale), px(height/w.scale))
+    newsize = (width, height)
     onbuffer_resize(w, newsize)
-    w.size = newsize
+    w.buffer_size = newsize
   end)
 
   GLFW.SetWindowSizeCallback(window, function(window, width, height)

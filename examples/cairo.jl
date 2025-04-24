@@ -21,4 +21,4 @@ end
 frame(w::Window) = drawing(draw, w.size)
 onkey(w::Window, ::KeyPress{Keys.escape}) = close(w)
 
-open(Window(title="Rounded Rectangle", size=(100mm, 100mm), animating=true))
+open(Window(title="Rounded Rectangle", size=(140mm, 80mm), animating=true))
