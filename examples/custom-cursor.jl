@@ -35,7 +35,7 @@ for i=1:32, j=1:32
   end
 end
 
-frame(w::Window) = fill(colorant"black", w.buffer_size)
+frame(w::Window) = fill!(w.buffer, colorant"black")
 
 onkey(w::Window, ::KeyPress{Keys.escape}) = close(w)
 

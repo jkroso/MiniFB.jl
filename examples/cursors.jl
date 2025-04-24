@@ -32,6 +32,6 @@ function onmouse(w::Window, pos::Vec2{px})
 end
 
 onkey(w::Window, ::KeyPress{Keys.escape}) = close(w)
-frame(w::Window) = gentiles(w.buffer_size...)
+frame(w::Window) = gentiles(reverse(size(w.buffer))...)
 
 open(Window(title="Cursors", size=[100mm,200mm]))

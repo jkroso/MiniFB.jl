@@ -2,6 +2,8 @@
 @use "github.com/jkroso/Prospects.jl" @def
 @use Colors...
 
+"Here we define our own window type which means we don't have to worry
+about overwriting other methods"
 @def mutable struct GradientAnimation <: AbstractWindow
   time::Float64=0.0
   from::RGB24=RGB24(1, .2, 0)
@@ -15,7 +17,7 @@ function interpolate(t::Float64, a::RGB24, b::RGB24)
 end
 
 function frame(w::GradientAnimation)
-  x, y = w.buffer_size
+  y, x = size(w.buffer)
   w.time += 9
   w.time > x && (w.time = 0.0)
   row = map(1:x) do i
@@ -23,7 +25,7 @@ function frame(w::GradientAnimation)
     t = phase <= 1.0 ? phase : 2.0 - phase
     interpolate(t, w.from, w.to)
   end
-  repeat(row', y)
+  w.buffer .= row' # spread across all rows
 end
 
 function onmouse(w::GradientAnimation, pos::Vec2{px})
@@ -37,4 +39,4 @@ end
 onkey(w::GradientAnimation, ::KeyPress{Keys.escape}) = close(w)
 onkey(w::GradientAnimation, ::KeyPress{Keys.mouse_left}) = println("click!")
 
-open(GradientAnimation(title="Gradient", animating=true, size=[100mm,100mm]))
+open(GradientAnimation(title="Gradient", animating=true, size=[200mm,200mm]))

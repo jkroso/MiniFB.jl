@@ -5,7 +5,7 @@
 window = Window(
   title="Window Control",
   size=[300px, 200px],
-  position=[100px, 100px],
+  position=[500mm, 200mm],
   animating=true)
 
 # Movement and sizing speed per frame

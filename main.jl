@@ -115,7 +115,7 @@ end
   title::String=""
   scale::Float32=2.0 # For some reason computers have an internal pixel size that differs from the size of the actual pixels
   size::Vec2{px}=Vec2(0px, 0px)
-  buffer_size::Tuple{Int32,Int32}=(0, 0)
+  buffer::Matrix{RGBA{Colors.N0f8}}=Matrix{RGBA{Colors.N0f8}}(undef, 0, 0)
   position::Vec2{px}=Vec2(0px, 0px)
   mouse::Vec2{px}=Vec2(0px, 0px)
   keys::Keys=Keys(0)
@@ -203,14 +203,12 @@ Base.open(w::AbstractWindow) = begin
   window = GLFW.CreateWindow(width, height, w.title)
   GLFW.MakeContextCurrent(window)
   GLFW.SwapInterval(1)
-  GLFW.ShowWindow(window)
+  GLFW.SetWindowPos(window, int.(w.position)...)
   w.scale = GLFW.GetWindowContentScale(window)[1]
   bx,by = GLFW.GetFramebufferSize(window)
-  w.buffer_size = (bx, by)
-  x, y = GLFW.GetWindowPos(window)
-  w.position = Vec2{px}(px(x), px(y))
-
-  glViewport(0, 0, w.buffer_size...)
+  w.buffer = Matrix{RGBA{Colors.N0f8}}(undef, by, bx)
+  glViewport(0, 0, bx, by)
+  GLFW.ShowWindow(window)
 
   # Compile shaders
   vertexShader = glCreateShader(GL_VERTEX_SHADER)
@@ -263,8 +261,8 @@ Base.open(w::AbstractWindow) = begin
   GLFW.SetFramebufferSizeCallback(window, function(window, width, height)
     glViewport(0, 0, width, height)
     newsize = (width, height)
-    onbuffer_resize(w, newsize)
-    w.buffer_size = newsize
+    invokelatest(onbuffer_resize, w, newsize)
+    w.buffer = Matric{RGBA{Colors.N0f8}}(undef, height, width)
   end)
 
   GLFW.SetWindowSizeCallback(window, function(window, width, height)
