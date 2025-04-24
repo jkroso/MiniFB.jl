@@ -103,4 +103,4 @@ It displays information about the primary screen, the current screen, and all sc
 Try moving the window between monitors to see the current screen information update.
 """)
 
-wait(open(window))
+open(window)

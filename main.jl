@@ -318,7 +318,7 @@ Base.open(w::AbstractWindow) = begin
   onopen(w)
   isnothing(w.cursor) || change_cursor(w, w.cursor)
 
-  errormonitor(@async begin
+  wait(@async begin
     while !GLFW.WindowShouldClose(window)
       invokelatest(redraw, w)
       yield()

@@ -62,4 +62,4 @@ The background color changes based on window position.
 All movement and resize controls work continuously while keys are pressed.
 """)
 
-wait(open(window))
+open(window)
