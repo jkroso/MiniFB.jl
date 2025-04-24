@@ -148,8 +148,11 @@ int(p::Length) = int(convert(px, p))
 int(x::AbstractFloat) = round(Int, x)
 int(x) = x
 
-"Called whenever the window is resized"
-onbuffer_resize(w::AbstractWindow, newsize::Vec2{px}) = nothing
+"Called whenever the window is resized (internal buffer size change)"
+onbuffer_resize(window, newsize) = nothing
+
+"Called whenever the window is resized (window size change)"
+onresize(window, newsize}) = nothing
 
 abstract type KeyEvent{key} end
 struct KeyPress{key} <: KeyEvent{key}
@@ -171,6 +174,9 @@ onmouse(window, pos) = nothing
 "Called when either scroll wheel is moved. `delta` is a `Vec{2,px}` with horizontal,vertical order"
 onscroll(window, delta) = nothing
 
+"Called when the window position changes. `pos` is the new window position as a `Vec2{px}`"
+onreposition(window, pos) = nothing
+
 "Called once when the window first opens"
 onopen(window) = nothing
 
@@ -185,6 +191,8 @@ Base.open(w::AbstractWindow) = begin
   GLFW.ShowWindow(window)
   w.scale = GLFW.GetWindowContentScale(window)[1]
   w.buffer_size = (round(Int, width*w.scale), round(Int, height*w.scale))
+  x, y = GLFW.GetWindowPos(window)
+  w.position = Vec2{px}(px(x), px(y))
 
   glViewport(0, 0, w.buffer_size...)
 
@@ -243,6 +251,12 @@ Base.open(w::AbstractWindow) = begin
     w.size = newsize
   end)
 
+  GLFW.SetWindowSizeCallback(window, function(window, width, height)
+    newsize = Vec2{px}(px(width), px(height))
+    invokelatest(onresize, w, newsize)
+    w.size = newsize
+  end)
+
   GLFW.SetKeyCallback(window, function(window, keyenum, keycode, action, _)
     key = convert(Keys, keyenum)
     if action == GLFW.PRESS
@@ -273,6 +287,12 @@ Base.open(w::AbstractWindow) = begin
 
   GLFW.SetScrollCallback(window, function(window, x, y)
     invokelatest(onscroll, w, Vec2{px}(x, y))
+  end)
+
+  GLFW.SetWindowPosCallback(window, function(window, x, y)
+    newpos = Vec2{px}(px(x), px(y))
+    invokelatest(onreposition, w, newpos)
+    w.position = newpos
   end)
 
   w.glfw = [window, texture, shaderProgram, VAO, VBO, EBO]
