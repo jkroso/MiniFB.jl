@@ -1,4 +1,4 @@
-@use ".." Window Keys KeyPress onkey onreposition onresize px Vec2 frame
+@use ".." Window Keys KeyPress onkey onreposition onresize px Vec2 frame mm
 @use Colors...
 
 # Create a window to demonstrate window position and size control
@@ -8,22 +8,21 @@ window = Window(
   position=[100px, 100px],
   animating=true)
 
-# Movement and sizing speed (px per frame)
-const MOVE_SPEED = 5px
-const SIZE_SPEED = 5px
+# Movement and sizing speed per frame
+const SPEED = 1mm
 
 # Generate a color gradient based on window position and handle continuous key actions
 function frame(w::Window)
   # Handle continuous movement and resizing based on keys
-  Keys.left in w.keys && (w.position -= Vec2(MOVE_SPEED, 0px))
-  Keys.right in w.keys && (w.position += Vec2(MOVE_SPEED, 0px))
-  Keys.up in w.keys && (w.position -= Vec2(0px, MOVE_SPEED))
-  Keys.down in w.keys && (w.position += Vec2(0px, MOVE_SPEED))
-  Keys.equal in w.keys && (w.size += Vec2(SIZE_SPEED, SIZE_SPEED))
+  Keys.left in w.keys && (w.position -= Vec2(SPEED, 0px))
+  Keys.right in w.keys && (w.position += Vec2(SPEED, 0px))
+  Keys.up in w.keys && (w.position -= Vec2(0px, SPEED))
+  Keys.down in w.keys && (w.position += Vec2(0px, SPEED))
+  Keys.equal in w.keys && (w.size += Vec2(SPEED, SPEED))
   if Keys.minus in w.keys
     # Prevent window from getting too small
     if w.size[1] > 100px && w.size[2] > 100px
-      w.size -= Vec2(SIZE_SPEED, SIZE_SPEED)
+      w.size -= Vec2(SPEED, SPEED)
     end
   end
 

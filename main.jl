@@ -189,6 +189,9 @@ onscroll(window, delta) = nothing
 "Called when the window position changes. `pos` is the new window position as a `Vec2{px}`"
 onreposition(window, pos) = nothing
 
+"Called when files are dropped onto the window. `paths` is an array of file paths"
+onfiledrop(window, paths) = nothing
+
 "Called once when the window first opens"
 onopen(window) = nothing
 
@@ -306,6 +309,10 @@ Base.open(w::AbstractWindow) = begin
     newpos = Vec2{px}(px(x), px(y))
     invokelatest(onreposition, w, newpos)
     w.position = newpos
+  end)
+
+  GLFW.SetDropCallback(window, function(window, paths)
+    invokelatest(onfiledrop, w, paths)
   end)
 
   w.glfw = [window, texture, shaderProgram, VAO, VBO, EBO]
