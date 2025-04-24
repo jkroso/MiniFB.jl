@@ -360,5 +360,48 @@ end
 
 Base.close(w::AbstractWindow) = GLFW.SetWindowShouldClose(w.glfw[1], true)
 
+"""
+Represents the screen/monitor where the window is displayed.
+Provides access to screen size, resolution, and other monitor-related information.
+"""
+struct Screen
+  monitor::GLFW.Monitor
+  size::Vec2{px}      # Physical size in pixels
+  position::Vec2{px}  # Position in virtual screen coordinates
+  content_scale::Vec2{Float32}  # DPI scaling factors
+  name::String
+
+  Screen(monitor::GLFW.Monitor=GLFW.GetPrimaryMonitor()) = begin
+    mode = GLFW.GetVideoMode(monitor)
+    width, height = mode.width, mode.height
+    xpos, ypos = GLFW.GetMonitorPos(monitor)
+    xscale, yscale = GLFW.GetMonitorContentScale(monitor)
+    name = GLFW.GetMonitorName(monitor)
+    new(monitor, Vec2{px}(px(width), px(height)), Vec2{px}(px(xpos), px(ypos)),
+        Vec2{Float32}(xscale, yscale), name)
+  end
+end
+
+"""
+Get the screen where a specific window is located.
+If the window spans multiple screens, returns the screen with the largest overlap.
+"""
+Base.getproperty(w::AbstractWindow, ::Field{:screen}) = begin
+  isempty(w.glfw) && return Screen() # primary screen
+
+  win_pos = w.position
+  win_size = w.size
+  screens = [Screen(m) for m in GLFW.GetMonitors()]
+
+  maxoverlap, i = findmax(screens) do screen
+    left = max(win_pos[1], screen.position[1])
+    right = min(win_pos[1] + win_size[1], screen.position[1] + screen.size[1])
+    top = max(win_pos[2], screen.position[2])
+    bottom = min(win_pos[2] + win_size[2], screen.position[2] + screen.size[2])
+    (right - left) * (bottom - top)
+  end
+  screens[i]
+end
+
 export Window, AbstractWindow, frame, redraw, onkey, KeyPress, KeyRelease, Keys, onopen, onmouse, onresize,
-       onreposition, Cursor
+       onreposition, Cursor, Screen
