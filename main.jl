@@ -110,6 +110,28 @@ end
   hotspot::Vec2{px}=Vec2{px}(0, 0)
 end
 
+"""
+Represents the screen/monitor where the window is displayed.
+Provides access to screen size, resolution, DPI scale factors
+"""
+struct Screen
+  monitor::GLFW.Monitor
+  size::Vec2{px}      # Physical size in pixels
+  position::Vec2{px}  # Position in virtual screen coordinates
+  content_scale::Vec2{Float32}  # DPI scaling factors
+  name::String
+
+  Screen(monitor::GLFW.Monitor=GLFW.GetPrimaryMonitor()) = begin
+    mode = GLFW.GetVideoMode(monitor)
+    width, height = mode.width, mode.height
+    xpos, ypos = GLFW.GetMonitorPos(monitor)
+    xscale, yscale = GLFW.GetMonitorContentScale(monitor)
+    name = GLFW.GetMonitorName(monitor)
+    new(monitor, Vec2{px}(px(width), px(height)), Vec2{px}(px(xpos), px(ypos)),
+        Vec2{Float32}(xscale, yscale), name)
+  end
+end
+
 @abstract struct AbstractWindow
   glfw::Vector=[] # everything needed by GLFW to manage the window
   title::String=""
@@ -121,6 +143,7 @@ end
   keys::Keys=Keys(0)
   animating::Bool=false
   cursor::Union{Nothing,Cursor,GLFW.Cursor}=nothing
+  screen::Screen=Screen()
 end
 
 Base.setproperty!(w::AbstractWindow, ::Field{:cursor}, cursor) = begin
@@ -196,7 +219,7 @@ onfiledrop(window, paths) = nothing
 onopen(window) = nothing
 
 "Generate a pixel buffer to display. If the size doesn't match the window then it will be stretched"
-frame(w::AbstractWindow) = fill(0xffffffff, (int(w.size[1]), int(w.size[2])))
+frame(w::AbstractWindow) = w.buffer
 
 Base.open(w::AbstractWindow) = begin
   width, height = int.(w.size)
@@ -267,6 +290,7 @@ Base.open(w::AbstractWindow) = begin
 
   GLFW.SetWindowSizeCallback(window, function(window, width, height)
     newsize = Vec2{px}(px(width), px(height))
+    w.screen = getscreen(w)
     invokelatest(onresize, w, newsize)
     w.size = newsize
   end)
@@ -305,6 +329,7 @@ Base.open(w::AbstractWindow) = begin
 
   GLFW.SetWindowPosCallback(window, function(window, x, y)
     newpos = Vec2{px}(px(x), px(y))
+    w.screen = getscreen(w)
     invokelatest(onreposition, w, newpos)
     w.position = newpos
   end)
@@ -317,6 +342,7 @@ Base.open(w::AbstractWindow) = begin
 
   onopen(w)
   isnothing(w.cursor) || change_cursor(w, w.cursor)
+  w.screen = getscreen(w)
 
   wait(@async begin
     while !GLFW.WindowShouldClose(window)
@@ -361,32 +387,10 @@ end
 Base.close(w::AbstractWindow) = GLFW.SetWindowShouldClose(w.glfw[1], true)
 
 """
-Represents the screen/monitor where the window is displayed.
-Provides access to screen size, resolution, and other monitor-related information.
-"""
-struct Screen
-  monitor::GLFW.Monitor
-  size::Vec2{px}      # Physical size in pixels
-  position::Vec2{px}  # Position in virtual screen coordinates
-  content_scale::Vec2{Float32}  # DPI scaling factors
-  name::String
-
-  Screen(monitor::GLFW.Monitor=GLFW.GetPrimaryMonitor()) = begin
-    mode = GLFW.GetVideoMode(monitor)
-    width, height = mode.width, mode.height
-    xpos, ypos = GLFW.GetMonitorPos(monitor)
-    xscale, yscale = GLFW.GetMonitorContentScale(monitor)
-    name = GLFW.GetMonitorName(monitor)
-    new(monitor, Vec2{px}(px(width), px(height)), Vec2{px}(px(xpos), px(ypos)),
-        Vec2{Float32}(xscale, yscale), name)
-  end
-end
-
-"""
 Get the screen where a specific window is located.
 If the window spans multiple screens, returns the screen with the largest overlap.
 """
-Base.getproperty(w::AbstractWindow, ::Field{:screen}) = begin
+function getscreen(w::AbstractWindow)
   isempty(w.glfw) && return Screen() # primary screen
 
   win_pos = w.position
