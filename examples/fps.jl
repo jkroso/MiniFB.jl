@@ -6,6 +6,7 @@
   direction::Int8=3
   time::Float64=time()
   frames::UInt16=0
+  buffer::Matrix{RGBA{Colors.N0f8}}=Matrix{RGBA{Colors.N0f8}}(undef, 0, 0)
 end
 
 const window = FPSTest(title="Red and Blue", size=Screen().size, animating=true)
@@ -27,7 +28,10 @@ end
 onkey(w::FPSTest, ::KeyPress{Keys.escape}) = close(w)
 
 onresize(w::FPSTest, size) = println("New size is: $(size[1]), $(size[2])")
-onbuffer_resize(w::FPSTest, size) = println("New buffer size is: $(size[1]), $(size[2])")
+onbuffer_resize(w::FPSTest, size) = begin
+  println("New buffer size is: $(size[1]), $(size[2])")
+  w.buffer = Matrix{RGBA{Colors.N0f8}}(undef, size...)
+end
 
 println("""
 Press ESC to close the window. Resize the window to see how it affects the frame rate.

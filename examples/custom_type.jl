@@ -1,4 +1,4 @@
-@use ".." AbstractWindow frame onmouse onkey onscroll Vec2 px Keys KeyPress mm
+@use ".." AbstractWindow frame onmouse onkey onscroll Vec2 px Keys KeyPress mm int
 @use "github.com/jkroso/Prospects.jl" @def
 @use Colors...
 
@@ -17,7 +17,7 @@ function interpolate(t::Float64, a::RGB24, b::RGB24)
 end
 
 function frame(w::GradientAnimation)
-  y, x = size(w.buffer)
+  x, y = int.(w.size*w.screen.content_scale)
   w.time += 9
   w.time > x && (w.time = 0.0)
   row = map(1:x) do i
@@ -25,7 +25,7 @@ function frame(w::GradientAnimation)
     t = phase <= 1.0 ? phase : 2.0 - phase
     interpolate(t, w.from, w.to)
   end
-  w.buffer .= row' # spread across all rows
+  repeat(row', y, 1)
 end
 
 function onmouse(w::GradientAnimation, pos::Vec2{px})

@@ -149,7 +149,6 @@ const default_cursor = Cursor(GLFW.ARROW_CURSOR)
   glfw::Vector=[] # everything needed by GLFW to manage the window
   title::String=""
   size::Vec2{px}=Vec2(0px, 0px)
-  buffer::Matrix{RGBA{Colors.N0f8}}=Matrix{RGBA{Colors.N0f8}}(undef, 0, 0)
   position::Vec2{px}=Vec2(0px, 0px)
   mouse::Vec2{px}=Vec2(0px, 0px)
   keys::Keys=Keys(0)
@@ -183,9 +182,6 @@ Base.setproperty!(w::AbstractWindow, ::Field{:size}, size) = begin
   size
 end
 
-"If your app only has one kind of window then you may as well just use this type"
-@def mutable struct Window <: AbstractWindow end
-
 int(p::px) = int(p.value)
 int(p::Length) = int(convert(px, p))
 int(x::AbstractFloat) = round(Int, x)
@@ -196,6 +192,14 @@ onbuffer_resize(window, newsize) = nothing
 
 "Called whenever the window is resized (window size change)"
 onresize(window, newsize) = nothing
+
+"If your app only has one kind of window then you may as well just use this type"
+@def mutable struct Window <: AbstractWindow
+  buffer::Matrix{RGBA{Colors.N0f8}}=Matrix{RGBA{Colors.N0f8}}(undef, 0, 0)
+end
+
+onbuffer_resize(w::Window, (x, y)) = w.buffer = Matrix{RGBA{Colors.N0f8}}(undef, int(y), int(x))
+frame(w::Window) = w.buffer
 
 abstract type KeyEvent{key} end
 struct KeyPress{key} <: KeyEvent{key}
@@ -227,7 +231,7 @@ onfiledrop(window, paths) = nothing
 onopen(window) = nothing
 
 "Generate a pixel buffer to display. If the size doesn't match the window then it will be stretched"
-frame(w::AbstractWindow) = w.buffer
+frame(w) = nothing
 
 Base.open(w::AbstractWindow) = begin
   width, height = int.(w.size)
@@ -235,9 +239,7 @@ Base.open(w::AbstractWindow) = begin
   GLFW.MakeContextCurrent(window)
   GLFW.SwapInterval(1)
   GLFW.SetWindowPos(window, int.(w.position)...)
-  bx,by = GLFW.GetFramebufferSize(window)
-  w.buffer = Matrix{RGBA{Colors.N0f8}}(undef, by, bx)
-  glViewport(0, 0, bx, by)
+  glViewport(0, 0, GLFW.GetFramebufferSize(window)...)
   GLFW.ShowWindow(window)
 
   # Compile shaders
@@ -290,9 +292,7 @@ Base.open(w::AbstractWindow) = begin
 
   GLFW.SetFramebufferSizeCallback(window, function(window, width, height)
     glViewport(0, 0, width, height)
-    newsize = (width, height)
-    invokelatest(onbuffer_resize, w, newsize)
-    w.buffer = Matrix{RGBA{Colors.N0f8}}(undef, height, width)
+    invokelatest(onbuffer_resize, w, (width, height))
   end)
 
   GLFW.SetKeyCallback(window, function(window, keyenum, keycode, action, _)
@@ -330,9 +330,10 @@ Base.open(w::AbstractWindow) = begin
 
   w.glfw = [window, texture, shaderProgram, VAO, VBO, EBO]
 
-  onopen(w)
   isnothing(w.cursor) || GLFW.SetCursor(window, w.cursor.glfw)
   w.screen = getscreen(w)
+  invokelatest(onopen, w)
+  invokelatest(onbuffer_resize, w, GLFW.GetFramebufferSize(window))
 
   wait(@async begin
     while !GLFW.WindowShouldClose(window)
