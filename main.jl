@@ -365,8 +365,6 @@ redraw(w::AbstractWindow) = begin
   glBindTexture(GL_TEXTURE_2D, texture[])
   glBindVertexArray(VAO[])
   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, C_NULL)
-  glBindVertexArray(0)
-  glBindTexture(GL_TEXTURE_2D, texture[])
   GLFW.SwapBuffers(window)
 end
 
