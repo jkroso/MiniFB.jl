@@ -155,13 +155,18 @@ end
 
 Base.setproperty!(w::AbstractWindow, ::Field{:position}, position) = begin
   isempty(w.glfw) || GLFW.SetWindowPos(w.glfw[1], int(position[1]), int(position[2]))
+  position == w.position || invokelatest(onreposition, w, position)
   setfield!(w, :position, position)
+  w.screen = getscreen(w)
   position
 end
 
 Base.setproperty!(w::AbstractWindow, ::Field{:size}, size) = begin
   isempty(w.glfw) || GLFW.SetWindowSize(w.glfw[1], int(size[1]), int(size[2]))
+  newsize = Vec2{px}(convert(px, size[1]), convert(px, size[2]))
+  newsize == w.size || invokelatest(onresize, w, newsize)
   setfield!(w, :size, size)
+  w.screen = getscreen(w)
   size
 end
 
@@ -289,10 +294,7 @@ Base.open(w::AbstractWindow) = begin
   end)
 
   GLFW.SetWindowSizeCallback(window, function(window, width, height)
-    newsize = Vec2{px}(px(width), px(height))
-    w.screen = getscreen(w)
-    invokelatest(onresize, w, newsize)
-    w.size = newsize
+    w.size = Vec2{px}(px(width), px(height))
   end)
 
   GLFW.SetKeyCallback(window, function(window, keyenum, keycode, action, _)
@@ -328,10 +330,7 @@ Base.open(w::AbstractWindow) = begin
   end)
 
   GLFW.SetWindowPosCallback(window, function(window, x, y)
-    newpos = Vec2{px}(px(x), px(y))
-    w.screen = getscreen(w)
-    invokelatest(onreposition, w, newpos)
-    w.position = newpos
+    w.position = Vec2{px}(px(x), px(y))
   end)
 
   GLFW.SetDropCallback(window, function(window, paths)
