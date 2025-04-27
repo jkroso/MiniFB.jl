@@ -2,20 +2,16 @@
 @use Colors...
 
 # Create a window to demonstrate window position and size control
-window = Window(
-  title="Window Control",
-  size=[300px, 200px],
-  position=[200mm, 200mm],
-  animating=true)
+window = Window(title="Window Control",
+                size=[300px, 200px],
+                position=[200mm, 200mm],
+                animating=true)
 
 # Generate a color gradient based on window position and handle continuous key actions
 function frame(w::Window)
   # Normalize position (0-1 range)
-  x_norm,y_norm = w.position/1000px # should divide be screen width - window width
-  r = clamp(x_norm, 0.2, 0.8)
-  g = clamp(y_norm, 0.2, 0.8)
-  b = 0.5
-  fill!(w.buffer, RGB(r, g, b))
+  x_norm,y_norm = w.position/w.screen.size[1]
+  fill!(w.buffer, RGB(clamp(x_norm, 0, 1), clamp(y_norm, 0, 1), 0.5))
 end
 
 # Called when window position changes
@@ -38,10 +34,7 @@ onkey(w::Window, ::KeyPress{Keys.right}) = w.position += Vec2(SPEED, 0px)
 onkey(w::Window, ::KeyPress{Keys.up}) = w.position -= Vec2(0px, SPEED)
 onkey(w::Window, ::KeyPress{Keys.down}) = w.position += Vec2(0px, SPEED)
 onkey(w::Window, ::KeyPress{Keys.equal}) = w.size += Vec2(SPEED, SPEED)
-onkey(w::Window, ::KeyPress{Keys.minus}) =  begin
-  @show w.size-Vec2(SPEED, SPEED), Vec2(100px, 100px)
-  w.size = max(w.size-Vec2(SPEED, SPEED), Vec2(100px, 100px))
-end
+onkey(w::Window, ::KeyPress{Keys.minus}) =  w.size = max(w.size-Vec2(SPEED, SPEED), Vec2(100px, 100px))
 
 function onkey(w::Window, ::KeyPress{Keys.r})
   w.position = Vec2(100px, 100px)

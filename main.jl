@@ -166,18 +166,19 @@ Base.setproperty!(w::AbstractWindow, ::Field{:cursor}, cursor) = begin
 end
 
 Base.setproperty!(w::AbstractWindow, ::Field{:position}, position) = begin
-  isempty(w.glfw) || GLFW.SetWindowPos(w.glfw[1], int(position[1]), int(position[2]))
-  position == w.position || invokelatest(onreposition, w, position)
+  position == w.position && return position
+  invokelatest(onreposition, w, position)
   setfield!(w, :position, position)
+  isempty(w.glfw) || GLFW.SetWindowPos(w.glfw[1], int(position[1]), int(position[2]))
   w.screen = getscreen(w)
   position
 end
 
 Base.setproperty!(w::AbstractWindow, ::Field{:size}, size) = begin
-  isempty(w.glfw) || GLFW.SetWindowSize(w.glfw[1], int(size[1]), int(size[2]))
-  newsize = Vec2{px}(convert(px, size[1]), convert(px, size[2]))
-  newsize == w.size || invokelatest(onresize, w, newsize)
+  size == w.size && return size
+  invokelatest(onresize, w, Vec2{px}(convert(px, size[1]), convert(px, size[2])))
   setfield!(w, :size, size)
+  isempty(w.glfw) || GLFW.SetWindowSize(w.glfw[1], int(size[1]), int(size[2]))
   w.screen = getscreen(w)
   size
 end
@@ -294,10 +295,6 @@ Base.open(w::AbstractWindow) = begin
     w.buffer = Matrix{RGBA{Colors.N0f8}}(undef, height, width)
   end)
 
-  GLFW.SetWindowSizeCallback(window, function(window, width, height)
-    w.size = Vec2{px}(px(width), px(height))
-  end)
-
   GLFW.SetKeyCallback(window, function(window, keyenum, keycode, action, _)
     key = convert(Keys, keyenum)
     if action == GLFW.PRESS
@@ -326,17 +323,10 @@ Base.open(w::AbstractWindow) = begin
     end
   end)
 
-  GLFW.SetScrollCallback(window, function(window, x, y)
-    invokelatest(onscroll, w, Vec2{px}(x, y))
-  end)
-
-  GLFW.SetWindowPosCallback(window, function(window, x, y)
-    w.position = Vec2{px}(px(x), px(y))
-  end)
-
-  GLFW.SetDropCallback(window, function(window, paths)
-    invokelatest(onfiledrop, w, paths)
-  end)
+  GLFW.SetWindowSizeCallback(window, (_, width, height) -> w.size = Vec2{px}(px(width), px(height)))
+  GLFW.SetWindowPosCallback(window, (_, x, y) -> w.position = Vec2{px}(px(x), px(y)))
+  GLFW.SetScrollCallback(window, (_, x, y) -> invokelatest(onscroll, w, Vec2{px}(x, y)))
+  GLFW.SetDropCallback(window, (_, paths) -> invokelatest(onfiledrop, w, paths))
 
   w.glfw = [window, texture, shaderProgram, VAO, VBO, EBO]
 
