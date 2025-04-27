@@ -105,10 +105,22 @@ Base.convert(::Type{Keys}, b::GLFW.MouseButton) = begin
   b == GLFW.MOUSE_BUTTON_1 ? Keys.mouse_left : b == GLFW.MOUSE_BUTTON_2 ? Keys.mouse_right : Keys.mouse_middle
 end
 
-@def struct Cursor
+"Adds auto memory management to GLFW's Cursor type"
+mutable struct Cursor
   image::AbstractMatrix
-  hotspot::Vec2{px}=Vec2{px}(0, 0)
+  hotspot::Vec2{px}
+  glfw::GLFW.Cursor
+  Cursor(image, hotspot=Vec2{px}(0,0)) = begin
+    finalizer(destroy, new(image, hotspot, GLFW.CreateCursor(unpack(image), (int(hotspot[1]), int(hotspot[2])))))
+  end
+  Cursor(e::GLFW.StandardCursorShape) = begin
+    finalizer(destroy, new(Matrix{NTuple{4, RGBA{Colors.N0f8}}}(undef, 0, 0),
+                           Vec2{px}(0,0),
+                           GLFW.CreateStandardCursor(e)))
+  end
 end
+
+destroy(c::Cursor) = GLFW.DestroyCursor(c.glfw)
 
 """
 Represents the screen/monitor where the window is displayed.
@@ -131,6 +143,8 @@ Screen(monitor::GLFW.Monitor=GLFW.GetPrimaryMonitor()) = begin
   Screen(monitor, Vec2{px}(px(width), px(height)), Vec2{px}(px(xpos), px(ypos)), Vec2{Float32}(xscale, yscale), name)
 end
 
+const default_cursor = Cursor(GLFW.ARROW_CURSOR)
+
 @abstract struct AbstractWindow
   glfw::Vector=[] # everything needed by GLFW to manage the window
   title::String=""
@@ -140,14 +154,14 @@ end
   mouse::Vec2{px}=Vec2(0px, 0px)
   keys::Keys=Keys(0)
   animating::Bool=false
-  cursor::Union{Nothing,Cursor,GLFW.Cursor}=nothing
+  cursor::Cursor=default_cursor
   screen::Screen=Screen()
 end
 
 Base.setproperty!(w::AbstractWindow, ::Field{:cursor}, cursor) = begin
-  c = tocursor(cursor)
+  c = cursor isa GLFW.StandardCursorShape ? Cursor(cursor) : cursor
   setfield!(w, :cursor, c)
-  change_cursor(w, c)
+  GLFW.SetCursor(w.glfw[1], c.glfw)
   cursor
 end
 
@@ -166,16 +180,6 @@ Base.setproperty!(w::AbstractWindow, ::Field{:size}, size) = begin
   setfield!(w, :size, size)
   w.screen = getscreen(w)
   size
-end
-
-tocursor(c::GLFW.StandardCursorShape) = GLFW.CreateStandardCursor(c)
-tocursor(c) = c
-
-change_cursor(w::AbstractWindow, c::GLFW.Cursor) = GLFW.SetCursor(w.glfw[1], c)
-change_cursor(w::AbstractWindow, c::Cursor) = begin
-  hotspot = (int(c.hotspot[1]), int(c.hotspot[2]))
-  img = map(p->reinterpret(NTuple{4,UInt8}, RGBA{Colors.N0f8}(p)), c.image)
-  change_cursor(w, GLFW.CreateCursor(img, hotspot))
 end
 
 "If your app only has one kind of window then you may as well just use this type"
@@ -337,7 +341,7 @@ Base.open(w::AbstractWindow) = begin
   w.glfw = [window, texture, shaderProgram, VAO, VBO, EBO]
 
   onopen(w)
-  isnothing(w.cursor) || change_cursor(w, w.cursor)
+  isnothing(w.cursor) || GLFW.SetCursor(window, w.cursor.glfw)
   w.screen = getscreen(w)
 
   wait(@async begin
