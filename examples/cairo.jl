@@ -18,7 +18,7 @@ function draw(ctx, (width,height))
   text(ctx, (width/2-textwidth(str, f)/2, f.size/2+pad/2), f, "#54B1BE", str)
 end
 
-frame(w::Window) = drawing(draw, w.size)
+frame(w::Window) = drawing(draw, w)
 onkey(w::Window, ::KeyPress{Keys.escape}) = close(w)
 
 open(Window(title="Rounded Rectangle", size=(140mm, 80mm), animating=true))

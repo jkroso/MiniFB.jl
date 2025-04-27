@@ -2,13 +2,10 @@
 @use "github.com/jkroso/Units.jl" Angle Radian °
 @use "github.com/jkroso/Font.jl/units" PPI px Length
 @use "github.com/jkroso/Font.jl" Font
+@use "." AbstractWindow int
 @use Colors...
 @use Cairo
 
-int(p::px) = int(p.value)
-int(p::Length) = int(convert(px, p))
-int(x) = round(Int, x)
-int(x::Integer) = x
 radians(a::Angle) = radians(convert(Radian, a))
 radians(a::Radian) = a.value
 radians(x) = x
@@ -33,15 +30,19 @@ path(f::Function, ctx; close=true, background=nothing, color=nothing, width=0) =
   isnothing(color) || stroke(ctx, width, color)
 end
 
-function drawing(f::Function, SIZE)
-  x,y = map(i->round(Int, int(i)), SIZE)
-  ctx = Cairo.CairoContext(Cairo.CairoRGBSurface(2x, 2y))
+function drawing(f::Function, size, (scalex, scaley)=(2.0, 2.0))
+  x,y = int.(size)
+  scaledx = round(Int, x*scalex)
+  scaledy = round(Int, y*scaley)
+  ctx = Cairo.CairoContext(Cairo.CairoRGBSurface(scaledx, scaledy))
   Cairo.set_antialias(ctx, Cairo.ANTIALIAS_GOOD)
-  Cairo.scale(ctx, 2, 2) # doubling the size of the canvas result in much crisper lines
-  f(ctx, map(i->convert(px, i), SIZE))
-  bytes=unsafe_wrap(Array, Cairo.image_surface_get_data(ctx.surface), (2x, 2y))
+  Cairo.scale(ctx, scalex, scaley)
+  f(ctx, map(i->convert(px, i), size))
+  bytes=unsafe_wrap(Array, Cairo.image_surface_get_data(ctx.surface), (scaledx, scaledy))
   reinterpret(ARGB32, permutedims(bytes)) # cairo is row major so we need to swap dimensions
 end
+
+drawing(f::Function, w::AbstractWindow)= drawing(f, w.size, w.screen.content_scale)
 
 function arc(ctx, center, size, start, stop)
   Cairo.arc(ctx, int(center[1]), int(center[2]), int(size), radians(start), radians(stop))
