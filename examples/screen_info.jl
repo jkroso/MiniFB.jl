@@ -19,7 +19,7 @@ end
 
 frame(w::Window) = fill!(w.buffer, RGB(0.2, 0.2, 0.3))
 
-previous_screen = Screen()
+previous_screen = nothing
 function onreposition(w::Window, _)
   global previous_screen
   if w.screen != previous_screen

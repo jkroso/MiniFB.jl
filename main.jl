@@ -120,22 +120,20 @@ struct Screen
   position::Vec2{px}  # Position in virtual screen coordinates
   content_scale::Vec2{Float32}  # DPI scaling factors
   name::String
+end
 
-  Screen(monitor::GLFW.Monitor=GLFW.GetPrimaryMonitor()) = begin
-    mode = GLFW.GetVideoMode(monitor)
-    width, height = mode.width, mode.height
-    xpos, ypos = GLFW.GetMonitorPos(monitor)
-    xscale, yscale = GLFW.GetMonitorContentScale(monitor)
-    name = GLFW.GetMonitorName(monitor)
-    new(monitor, Vec2{px}(px(width), px(height)), Vec2{px}(px(xpos), px(ypos)),
-        Vec2{Float32}(xscale, yscale), name)
-  end
+Screen(monitor::GLFW.Monitor=GLFW.GetPrimaryMonitor()) = begin
+  mode = GLFW.GetVideoMode(monitor)
+  width, height = mode.width, mode.height
+  xpos, ypos = GLFW.GetMonitorPos(monitor)
+  xscale, yscale = GLFW.GetMonitorContentScale(monitor)
+  name = GLFW.GetMonitorName(monitor)
+  Screen(monitor, Vec2{px}(px(width), px(height)), Vec2{px}(px(xpos), px(ypos)), Vec2{Float32}(xscale, yscale), name)
 end
 
 @abstract struct AbstractWindow
   glfw::Vector=[] # everything needed by GLFW to manage the window
   title::String=""
-  scale::Float32=2.0 # For some reason computers have an internal pixel size that differs from the size of the actual pixels
   size::Vec2{px}=Vec2(0px, 0px)
   buffer::Matrix{RGBA{Colors.N0f8}}=Matrix{RGBA{Colors.N0f8}}(undef, 0, 0)
   position::Vec2{px}=Vec2(0px, 0px)
@@ -232,7 +230,6 @@ Base.open(w::AbstractWindow) = begin
   GLFW.MakeContextCurrent(window)
   GLFW.SwapInterval(1)
   GLFW.SetWindowPos(window, int.(w.position)...)
-  w.scale = GLFW.GetWindowContentScale(window)[1]
   bx,by = GLFW.GetFramebufferSize(window)
   w.buffer = Matrix{RGBA{Colors.N0f8}}(undef, by, bx)
   glViewport(0, 0, bx, by)
