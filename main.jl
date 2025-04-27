@@ -120,7 +120,7 @@ mutable struct Cursor
   end
 end
 
-destroy(c::Cursor) = GLFW.DestroyCursor(c.glfw)
+destroy(c::Cursor) = GLFW.is_initialized() && GLFW.DestroyCursor(c.glfw)
 
 """
 Represents the screen/monitor where the window is displayed.
