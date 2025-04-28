@@ -30,19 +30,20 @@ path(f::Function, ctx; close=true, background=nothing, color=nothing, width=0) =
   isnothing(color) || stroke(ctx, width, color)
 end
 
-function drawing(f::Function, size, (scalex, scaley)=(2.0, 2.0))
+function drawing(f::Function, size, args..., ; scale=(2.0, 2.0))
+  (scalex, scaley) = scale
   x,y = int.(size)
   scaledx = round(Int, x*scalex)
   scaledy = round(Int, y*scaley)
   ctx = Cairo.CairoContext(Cairo.CairoRGBSurface(scaledx, scaledy))
   Cairo.set_antialias(ctx, Cairo.ANTIALIAS_GOOD)
   Cairo.scale(ctx, scalex, scaley)
-  f(ctx, map(i->convert(px, i), size))
+  invokelatest(f, ctx, size, args...)
   bytes=unsafe_wrap(Array, Cairo.image_surface_get_data(ctx.surface), (scaledx, scaledy))
   reinterpret(ARGB32, permutedims(bytes)) # cairo is row major so we need to swap dimensions
 end
 
-drawing(f::Function, w::AbstractWindow)= drawing(f, w.size, w.screen.content_scale)
+drawing(f::Function, w::AbstractWindow, args...) = drawing(f, w.size, args..., scale=w.screen.content_scale)
 
 function arc(ctx, center, size, start, stop)
   Cairo.arc(ctx, int(center[1]), int(center[2]), int(size), radians(start), radians(stop))
