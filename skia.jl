@@ -173,6 +173,31 @@ end
 
 text(canvas, pos, font::Font, color, str) = text(canvas, pos, font.family, font.size, color, str)
 
+function measure_text(font, size, str)
+  fontmgr = Skia.sk_fontmgr_ref_default()
+  weight = Int32(Skia.SK_FONT_STYLE_WEIGHT_LIGHT)
+  width = Int32(Skia.SK_FONT_STYLE_WIDTH_NORMAL)
+  fontStyle = Skia.sk_fontstyle_new(weight, width, Skia.SK_FONT_STYLE_SLANT_UPRIGHT)
+  typeface = Skia.sk_fontmgr_match_family_style(fontmgr, font, fontStyle)
+  skfont = Skia.sk_font_new_with_values(typeface, Float32(int(size)), 1.0f0, 0.0f0)
+  
+  # Measure text width
+  text_width = Skia.sk_font_measure_text(skfont, pointer(str), UInt64(ncodeunits(str)), Skia.SK_TEXT_ENCODING_UTF8, C_NULL, C_NULL)
+  
+  # Get font metrics for height
+  metrics = Ref{Skia.sk_font_metrics_t}()
+  Skia.sk_font_get_metrics(skfont, metrics)
+  text_height = metrics[].descent - metrics[].ascent
+  
+  # Cleanup
+  Skia.sk_font_delete(skfont)
+  Skia.sk_fontstyle_delete(fontStyle)
+  
+  return (text_width, text_height)
+end
+
+measure_text(font::Font, str) = measure_text(font.family, font.size, str)
+
 function line_to(canvas, pt)
   global current_path
   if current_path !== nothing
@@ -216,4 +241,4 @@ function rounded_rectangle(canvas, x, y, width, height, radius; background=nothi
   Skia.sk_path_delete(path)
 end
 
-export arc, drawing, path, rectangle, line_to, move_to, rounded_rectangle, text
+export arc, drawing, path, rectangle, line_to, move_to, rounded_rectangle, text, measure_text
