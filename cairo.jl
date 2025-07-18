@@ -45,9 +45,9 @@ end
 
 drawing(f::Function, w::AbstractWindow, args...) = drawing(f, w.size, args..., scale=w.screen.content_scale)
 
-function arc(ctx, center, size, start, stop)
-  Cairo.arc(ctx, int(center[1]), int(center[2]), int(size), radians(start), radians(stop))
-end
+arc(ctx, center, size, range) = arc(ctx, center, size, first(range), last(range))
+arc(ctx, center, size, start, stop) = Cairo.arc(ctx, int(center[1]), int(center[2]), int(size), radians(start), radians(stop))
+line_to(ctx, pt) = Cairo.line_to(ctx, int(pt[1]), int(pt[2]))
 
 function text(ctx, pos, font, size, color, str)
   Cairo.save(ctx)
@@ -61,4 +61,4 @@ end
 
 text(ctx, pos, font::Font, color, str) = text(ctx, pos, font.family, font.size, color, str)
 
-export text,arc,drawing,path,rectangle,stroke,fill,set_color
+export text, arc, drawing, path, rectangle, stroke, fill, set_color, line_to
