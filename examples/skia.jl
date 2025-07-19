@@ -1,5 +1,4 @@
-@use "../skia" drawing rectangle rounded_rectangle text measure_text
-@use "github.com/jkroso/Font.jl" Font textwidth
+@use "../skia" drawing rectangle rounded_rectangle text measure_text SkiaFont
 @use ".." Window frame onkey Keys KeyPress mm px
 
 function draw(ctx, (width,height))
@@ -11,7 +10,7 @@ function draw(ctx, (width,height))
   rounded_rectangle(ctx, pad, pad, xw, yw, radius, background="rgb(128,128,255)", color="white", stroke_width=1px)
 
   str = "Rounded Rectangle"
-  f = Font("Helvetica", 4mm, :light)
+  f = SkiaFont("Helvetica", 4mm)
   text_width, text_height = measure_text(f, str)
   text(ctx, ((width - text_width)/2, text_height/2+pad/2), f, "#54B1BE", str)
 end

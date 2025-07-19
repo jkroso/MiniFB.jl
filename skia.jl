@@ -1,7 +1,4 @@
-#This is a simple set of helper functions for working with Skia.jl
-@use "github.com/jkroso/Units.jl" Angle Radian °
-@use "github.com/jkroso/Font.jl/units" PPI px Length
-@use "github.com/jkroso/Font.jl" Font
+@use "github.com/jkroso/Units.jl" Angle Radian
 @use "." AbstractWindow int
 @use Colors...
 @use Skia
@@ -154,49 +151,45 @@ function path(f::Function, canvas; close=true, background=nothing, color=nothing
   current_path = nothing
 end
 
-function text(canvas, pos, font, size, color, str)
-  fontmgr = Skia.sk_fontmgr_ref_default()
-  weight = Int32(Skia.SK_FONT_STYLE_WEIGHT_LIGHT)
-  width = Int32(Skia.SK_FONT_STYLE_WIDTH_NORMAL)
-  fontStyle = Skia.sk_fontstyle_new(weight, width, Skia.SK_FONT_STYLE_SLANT_UPRIGHT)
-  typeface = Skia.sk_fontmgr_match_family_style(fontmgr, font, fontStyle)
+const fontmgr = Skia.sk_fontmgr_ref_default()
+
+mutable struct SkiaFont
+  family::String
+  weight::Skia.sk_font_style_weight_t
+  slant::Skia.sk_font_style_slant_t
+  size::Float32
+  raw::Ptr{Skia.sk_font_t}
+end
+
+cleanup(f::SkiaFont) = Skia.sk_font_delete(f.raw)
+
+function SkiaFont(family=Skia.getDefaultFont(), size=5mm, weight=Skia.SK_FONT_STYLE_WEIGHT_NORMAL, slant=Skia.SK_FONT_STYLE_SLANT_UPRIGHT)
+  fontStyle = Skia.sk_fontstyle_new(Int32(weight), Int32(Skia.SK_FONT_STYLE_WIDTH_NORMAL), Skia.SK_FONT_STYLE_SLANT_UPRIGHT)
+  typeface = Skia.sk_fontmgr_match_family_style(fontmgr, family, fontStyle)
+  size = Float32(int(size))
+  skfont = Skia.sk_font_new_with_values(typeface, size, 1.0f0, 0.0f0)
+  f = SkiaFont(family, weight, slant, size, skfont)
+  finalizer(cleanup, f)
+  f
+end
+
+function text(canvas, pos, font, color, str)
   paint = Skia.sk_paint_new()
   Skia.sk_paint_set_antialias(paint, true)
   Skia.sk_paint_set_color(paint, sk_color(color))
   Skia.sk_paint_set_style(paint, Skia.SK_PAINT_STYLE_FILL)
-  skfont = Skia.sk_font_new_with_values(typeface, Float32(int(size)), 1.0f0, 0.0f0)
-  blob = Skia.sk_textblob_make_from_string(str, skfont, Skia.SK_TEXT_ENCODING_UTF8)
+  blob = Skia.sk_textblob_make_from_string(str, font.raw, Skia.SK_TEXT_ENCODING_UTF8)
   Skia.sk_canvas_draw_text_blob(canvas, blob, Float32(int(pos[1])), Float32(int(pos[2])), paint)
-  # Cleanup
   Skia.sk_paint_delete(paint)
 end
 
-text(canvas, pos, font::Font, color, str) = text(canvas, pos, font.family, font.size, color, str)
-
-function measure_text(font, size, str)
-  fontmgr = Skia.sk_fontmgr_ref_default()
-  weight = Int32(Skia.SK_FONT_STYLE_WEIGHT_LIGHT)
-  width = Int32(Skia.SK_FONT_STYLE_WIDTH_NORMAL)
-  fontStyle = Skia.sk_fontstyle_new(weight, width, Skia.SK_FONT_STYLE_SLANT_UPRIGHT)
-  typeface = Skia.sk_fontmgr_match_family_style(fontmgr, font, fontStyle)
-  skfont = Skia.sk_font_new_with_values(typeface, Float32(int(size)), 1.0f0, 0.0f0)
-  
-  # Measure text width
-  text_width = Skia.sk_font_measure_text(skfont, pointer(str), UInt64(ncodeunits(str)), Skia.SK_TEXT_ENCODING_UTF8, C_NULL, C_NULL)
-  
-  # Get font metrics for height
+function measure_text(font::SkiaFont, str::AbstractString)
+  text_width = Skia.sk_font_measure_text(font.raw, pointer(str), UInt64(ncodeunits(str)), Skia.SK_TEXT_ENCODING_UTF8, C_NULL, C_NULL)
   metrics = Ref{Skia.sk_font_metrics_t}()
-  Skia.sk_font_get_metrics(skfont, metrics)
-  text_height = metrics[].descent - metrics[].ascent
-  
-  # Cleanup
-  Skia.sk_font_delete(skfont)
-  Skia.sk_fontstyle_delete(fontStyle)
-  
-  return (text_width, text_height)
+  Skia.sk_font_get_metrics(font.raw, metrics)
+  (;descent, ascent)= metrics[]
+  return (text_width, descent - ascent)
 end
-
-measure_text(font::Font, str) = measure_text(font.family, font.size, str)
 
 function line_to(canvas, pt)
   global current_path
