@@ -118,17 +118,10 @@ arc(canvas, center, size, range) = arc(canvas, center, size, first(range), last(
 # Global path for use within drawing functions
 current_path = nothing
 
-function path(f::Function, canvas; close=true, background=nothing, color=nothing, width=0)
-  global current_path
+function path(f::Function, canvas; close=false, background=nothing, color=nothing, width=0)
   path = Skia.sk_path_new()
-  current_path = path
-
-  # Call the drawing function
-  f()
-
-  if close
-    Skia.sk_path_close(path)
-  end
+  f(path) # Call the drawing function
+  close && Skia.sk_path_close(path)
 
   if !isnothing(background)
     paint = Skia.sk_paint_new()
@@ -148,7 +141,6 @@ function path(f::Function, canvas; close=true, background=nothing, color=nothing
   end
 
   Skia.sk_path_delete(path)
-  current_path = nothing
 end
 
 const fontmgr = Skia.sk_fontmgr_ref_default()
@@ -191,17 +183,12 @@ function measure_text(font::SkiaFont, str::AbstractString)
   return (text_width, descent - ascent)
 end
 
-function line_to(canvas, pt)
-  global current_path
-  if current_path !== nothing
-    Skia.sk_path_line_to(current_path, Float32(int(pt[1])), Float32(int(pt[2])))
-  end
-end
-
-function move_to(canvas, pt)
-  global current_path
-  if current_path !== nothing
-    Skia.sk_path_move_to(current_path, Float32(int(pt[1])), Float32(int(pt[2])))
+move_to(path, pt) = Skia.sk_path_move_to(path, Float32(int(pt[1])), Float32(int(pt[2])))
+line_to(path, pt) = Skia.sk_path_line_to(path, Float32(int(pt[1])), Float32(int(pt[2])))
+line(canvas, from, to, width, color) = begin
+  path(canvas, width=width, color=color) do path
+    move_to(path, from)
+    line_to(path, to)
   end
 end
 
@@ -210,9 +197,8 @@ function rounded_rectangle(canvas, x, y, width, height, radius; background=nothi
 
   # Create a rounded rectangle using Skia's built-in function
   rect = Skia.sk_rect_t(Float32(int(x)), Float32(int(y)), Float32(int(x + width)), Float32(int(y + height)))
-  Skia.sk_path_add_rounded_rect(path, Ptr{Skia.sk_rect_t}(pointer_from_objref(Ref(rect))),
-                                Float32(int(radius)), Float32(int(radius)),
-                                Skia.sk_path_direction_t(0)) # Clockwise
+  r = Float32(int(radius))
+  Skia.sk_path_add_rounded_rect(path, Ptr{Skia.sk_rect_t}(pointer_from_objref(Ref(rect))), r, r, Skia.SK_PATH_DIRECTION_CW)
 
   if !isnothing(background)
     paint = Skia.sk_paint_new()
@@ -234,4 +220,6 @@ function rounded_rectangle(canvas, x, y, width, height, radius; background=nothi
   Skia.sk_path_delete(path)
 end
 
-export arc, drawing, path, rectangle, line_to, move_to, rounded_rectangle, text, measure_text
+rounded_rectangle(canvas, origin, size, radius; kwargs...) = rounded_rectangle(canvas, origin[1], origin[2], size[1], size[2], radius; kwargs...)
+
+export arc, drawing, path, rectangle, line, line_to, move_to, rounded_rectangle, text, measure_text
