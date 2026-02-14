@@ -155,6 +155,8 @@ const default_cursor = Cursor(GLFW.ARROW_CURSOR)
   animating::Bool=false
   cursor::Cursor=default_cursor
   screen::Screen=Screen()
+  focus::Any=nothing
+  ui::Any=nothing
 end
 
 Base.setproperty!(w::AbstractWindow, ::Field{:cursor}, cursor) = begin
@@ -204,19 +206,32 @@ frame(w::Window) = w.buffer
 abstract type KeyEvent{key} end
 struct KeyPress{key} <: KeyEvent{key}
   keycode::Int
+  is_repeat::Bool
+  window
 end
+KeyPress{key}(keycode, window) where key = KeyPress{key}(Int(keycode), false, window)
 struct KeyRelease{key} <: KeyEvent{key}
   keycode::Int
+  is_repeat::Bool
+  window
+end
+KeyRelease{key}(keycode, window) where key = KeyRelease{key}(Int(keycode), false, window)
+
+struct MouseMove
+  position::Vec2{px}
+  window
 end
 
 "Called on any keyboard/mouse button press or release"
-onkey(window, event) = nothing
+onkey(w::AbstractWindow, event) = w.focus !== nothing ? onkey(w.focus, event) : nothing
+onkey(target, event) = nothing
 
 """
 Called when the mouse moves. Even if it's outside the window. The position is given relative
 to the window so it can be negative in either x or y direction
 """
-onmouse(window, pos) = nothing
+onmouse(w::AbstractWindow, event::MouseMove) = w.focus !== nothing ? onmouse(w.focus, event) : nothing
+onmouse(target, event) = nothing
 
 "Called when either scroll wheel is moved. `delta` is a `Vec{2,px}` with horizontal,vertical order"
 onscroll(window, delta) = nothing
@@ -297,18 +312,19 @@ Base.open(w::AbstractWindow) = begin
 
   GLFW.SetKeyCallback(window, function(window, keyenum, keycode, action, _)
     key = convert(Keys, keyenum)
-    if action == GLFW.PRESS
-      w.keys |= key
-      invokelatest(onkey, w, KeyPress{key}(keycode))
-    else
+    if action == GLFW.RELEASE
       w.keys ⊻= key
-      invokelatest(onkey, w, KeyRelease{key}(keycode))
+      invokelatest(onkey, w, KeyRelease{key}(keycode, w))
+    else
+      is_repeat = action == GLFW.REPEAT
+      is_repeat || (w.keys |= key)
+      invokelatest(onkey, w, KeyPress{key}(keycode, is_repeat, w))
     end
   end)
 
   GLFW.SetCursorPosCallback(window, function(window, x::Float64, y::Float64)
     newpos = Vec2{px}(x, y)
-    invokelatest(onmouse, w, newpos)
+    invokelatest(onmouse, w, MouseMove(newpos, w))
     w.mouse = newpos
   end)
 
@@ -316,10 +332,10 @@ Base.open(w::AbstractWindow) = begin
     key = convert(Keys, button)
     if action == GLFW.PRESS
       w.keys |= key
-      invokelatest(onkey, w, KeyPress{key}(0))
+      invokelatest(onkey, w, KeyPress{key}(0, w))
     else
       w.keys ⊻= key
-      invokelatest(onkey, w, KeyRelease{key}(0))
+      invokelatest(onkey, w, KeyRelease{key}(0, w))
     end
   end)
 
@@ -396,5 +412,5 @@ function getscreen(w::AbstractWindow)
   screens[i]
 end
 
-export Window, AbstractWindow, frame, redraw, onkey, KeyPress, KeyRelease, Keys, onopen, onmouse, onresize,
+export Window, AbstractWindow, frame, redraw, onkey, KeyPress, KeyRelease, Keys, MouseMove, onopen, onmouse, onresize,
        onreposition, Cursor, Screen
