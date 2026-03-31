@@ -1,4 +1,4 @@
-@use "github.com/jkroso/Prospects.jl" @def @abstract Field ["BitSet" @BitSet setinstances!]
+@use "github.com/jkroso/Prospects.jl" @def @abstract Field ["BitSet" @BitSet]
 @use "github.com/jkroso/Font.jl/units" px mm Length
 @use GeometryBasics: Vec2, Vec2i
 @use ModernGL...
@@ -51,17 +51,11 @@ To test if the user did a cmd+click you write:
 
   key_state == Keys.cmd|Keys.mouse_left
 """
-@BitSet Keys::UInt128
-let syntax = "tilde minus equal left_bracket right_bracket semicolon apostrophe comma period slash backslash times plus"
-    specials = "tab capslock enter shft cmd opt ctrl escape delete backspace space fn home pageup pagedown end clear eject insert left right up down"
-  setinstances!(Keys, map(Symbol, vcat(split(syntax),
-                                      'a':'z',
-                                      0:9,
-                                      ["num$n" for n in 0:9],
-                                      ["f$n" for n in 1:25],
-                                      split(specials),
-                                      [:mouse_left, :mouse_right, :mouse_middle])))
-end
+@BitSet Keys """
+  tilde minus equal left_bracket right_bracket semicolon apostrophe comma period slash backslash times plus
+  a:z 0:9 num(0:9) f(1:25) tab capslock enter shft cmd opt ctrl escape delete backspace space fn home pageup 
+  pagedown _end clear eject insert left right up down mouse_left mouse_right mouse_middle
+"""
 
 const keymap = Dict(GLFW.KEY_ENTER => Keys.enter,
                     GLFW.KEY_PAGE_UP => Keys.pageup,
