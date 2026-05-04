@@ -143,7 +143,11 @@ function path(f::Function, canvas; close=false, background=nothing, color=nothin
   Skia.sk_path_delete(path)
 end
 
-const fontmgr = Skia.sk_fontmgr_ref_default()
+const fontmgr = Ref{Ptr{Skia.sk_font_mgr_t}}()
+
+function __init__()
+  fontmgr[] = Skia.sk_fontmgr_ref_default()
+end
 
 mutable struct SkiaFont
   family::String
@@ -157,7 +161,7 @@ cleanup(f::SkiaFont) = Skia.sk_font_delete(f.raw)
 
 function SkiaFont(family=Skia.getDefaultFont(), size=5mm, weight=Skia.SK_FONT_STYLE_WEIGHT_NORMAL, slant=Skia.SK_FONT_STYLE_SLANT_UPRIGHT)
   fontStyle = Skia.sk_fontstyle_new(Int32(weight), Int32(Skia.SK_FONT_STYLE_WIDTH_NORMAL), Skia.SK_FONT_STYLE_SLANT_UPRIGHT)
-  typeface = Skia.sk_fontmgr_match_family_style(fontmgr, family, fontStyle)
+  typeface = Skia.sk_fontmgr_match_family_style(fontmgr[], family, fontStyle)
   size = Float32(int(size))
   skfont = Skia.sk_font_new_with_values(typeface, size, 1.0f0, 0.0f0)
   f = SkiaFont(family, weight, slant, size, skfont)
