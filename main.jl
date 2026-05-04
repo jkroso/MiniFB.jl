@@ -53,7 +53,7 @@ To test if the user did a cmd+click you write:
 """
 @BitSet Keys """
   tilde minus equal left_bracket right_bracket semicolon apostrophe comma period slash backslash times plus
-  a:z 0:9 num(0:9) f(1:25) tab capslock enter shft cmd opt ctrl escape delete backspace space fn home pageup 
+  a:z 0:9 num(0:9) f(1:25) tab capslock enter shft cmd opt ctrl escape delete backspace space fn home pageup
   pagedown _end clear eject insert left right up down mouse_left mouse_right mouse_middle
 """
 
@@ -195,7 +195,6 @@ onresize(window, newsize) = nothing
 end
 
 onbuffer_resize(w::Window, (x, y)) = w.buffer = Matrix{RGBA{Colors.N0f8}}(undef, int(y), int(x))
-frame(w::Window) = w.buffer
 
 abstract type KeyEvent{key} end
 struct KeyPress{key} <: KeyEvent{key}
