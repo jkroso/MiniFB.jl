@@ -5,14 +5,16 @@
 @use Colors...
 @use GLFW...
 
-GLFW.Init()
-GLFW.WindowHint(GLFW.CONTEXT_VERSION_MAJOR, 3)
-GLFW.WindowHint(GLFW.CONTEXT_VERSION_MINOR, 3)
-GLFW.WindowHint(GLFW.OPENGL_PROFILE, GLFW.OPENGL_CORE_PROFILE)
-GLFW.WindowHint(GLFW.TRANSPARENT_FRAMEBUFFER, false)
-GLFW.WindowHint(GLFW.VISIBLE, false)
-GLFW.WindowHint(GLFW.FOCUSED, false)
-GLFW.WindowHint(GLFW.FOCUS_ON_SHOW, true)
+function __init__()
+  GLFW.Init()
+  GLFW.WindowHint(GLFW.CONTEXT_VERSION_MAJOR, 3)
+  GLFW.WindowHint(GLFW.CONTEXT_VERSION_MINOR, 3)
+  GLFW.WindowHint(GLFW.OPENGL_PROFILE, GLFW.OPENGL_CORE_PROFILE)
+  GLFW.WindowHint(GLFW.TRANSPARENT_FRAMEBUFFER, false)
+  GLFW.WindowHint(GLFW.VISIBLE, false)
+  GLFW.WindowHint(GLFW.FOCUSED, false)
+  GLFW.WindowHint(GLFW.FOCUS_ON_SHOW, true)
+end
 
 const vertexShaderSource = """
 #version 330 core
