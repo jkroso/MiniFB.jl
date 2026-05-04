@@ -346,14 +346,12 @@ Base.open(w::AbstractWindow) = begin
   invokelatest(onopen, w)
   invokelatest(onbuffer_resize, w, GLFW.GetFramebufferSize(window))
 
-  wait(@async begin
-    while !GLFW.WindowShouldClose(window)
-      invokelatest(redraw, w)
-      yield()
-      w.animating ? GLFW.PollEvents() : GLFW.WaitEvents()
-    end
-    cleanup(w)
-  end)
+  while !GLFW.WindowShouldClose(window)
+    invokelatest(redraw, w)
+    yield()
+    w.animating ? GLFW.PollEvents() : GLFW.WaitEvents()
+  end
+  cleanup(w)
 end
 
 unpack(c::Colorant) = reinterpret(NTuple{4,UInt8}, RGBA{Colors.N0f8}(c))
