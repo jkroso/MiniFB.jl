@@ -1,5 +1,5 @@
 @use "github.com/jkroso/Units.jl" Angle Radian
-@use "." AbstractWindow int
+@use "." AbstractWindow int flt
 @use Colors...
 @use Skia
 
@@ -57,7 +57,7 @@ end
 drawing(f::Function, w::AbstractWindow, args...) = drawing(f, w.size, args..., scale=w.screen.content_scale)
 
 function rectangle(canvas, left, top, w, h; background=nothing, stroke=nothing, border=0px)
-  rectref = Ref(Skia.sk_rect_t(Float32(int(left)), Float32(int(top)), Float32(int(left + w)), Float32(int(top + h))))
+  rectref = Ref(Skia.sk_rect_t(flt(left), flt(top), flt(left + w), flt(top + h)))
 
   if !isnothing(background)
     paint = Skia.sk_paint_new()
@@ -71,7 +71,7 @@ function rectangle(canvas, left, top, w, h; background=nothing, stroke=nothing, 
     paint = Skia.sk_paint_new()
     Skia.sk_paint_set_color(paint, sk_color(stroke))
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(1)) # Stroke
-    Skia.sk_paint_set_stroke_width(paint, Float32(int(border)))
+    Skia.sk_paint_set_stroke_width(paint, flt(border))
     Skia.sk_canvas_draw_rect(canvas, rectref, paint)
     Skia.sk_paint_delete(paint)
   end
@@ -133,7 +133,7 @@ function path(f::Function, canvas; close=false, background=nothing, color=nothin
     paint = Skia.sk_paint_new()
     Skia.sk_paint_set_color(paint, sk_color(color))
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(1)) # Stroke
-    Skia.sk_paint_set_stroke_width(paint, Float32(int(width)))
+    Skia.sk_paint_set_stroke_width(paint, flt(width))
     Skia.sk_canvas_draw_path(canvas, path, paint)
     Skia.sk_paint_delete(paint)
   end
@@ -160,7 +160,7 @@ cleanup(f::SkiaFont) = Skia.sk_font_delete(f.raw)
 function SkiaFont(family=Skia.getDefaultFont(), size=5mm, weight=Skia.SK_FONT_STYLE_WEIGHT_NORMAL, slant=Skia.SK_FONT_STYLE_SLANT_UPRIGHT)
   fontStyle = Skia.sk_fontstyle_new(Int32(weight), Int32(Skia.SK_FONT_STYLE_WIDTH_NORMAL), Skia.SK_FONT_STYLE_SLANT_UPRIGHT)
   typeface = Skia.sk_fontmgr_match_family_style(fontmgr[], family, fontStyle)
-  size = Float32(int(size))
+  size = flt(size)
   skfont = Skia.sk_font_new_with_values(typeface, size, 1.0f0, 0.0f0)
   f = SkiaFont(family, weight, slant, size, skfont)
   finalizer(cleanup, f)
@@ -173,7 +173,7 @@ function text(canvas, pos, font, color, str)
   Skia.sk_paint_set_color(paint, sk_color(color))
   Skia.sk_paint_set_style(paint, Skia.SK_PAINT_STYLE_FILL)
   blob = Skia.sk_textblob_make_from_string(str, font.raw, Skia.SK_TEXT_ENCODING_UTF8)
-  Skia.sk_canvas_draw_text_blob(canvas, blob, Float32(int(pos[1])), Float32(int(pos[2])), paint)
+  Skia.sk_canvas_draw_text_blob(canvas, blob, flt(pos[1]), flt(pos[2]), paint)
   Skia.sk_paint_delete(paint)
 end
 
@@ -185,8 +185,8 @@ function measure_text(font::SkiaFont, str::AbstractString)
   return (text_width, descent - ascent)
 end
 
-move_to(path, pt) = Skia.sk_path_move_to(path, Float32(int(pt[1])), Float32(int(pt[2])))
-line_to(path, pt) = Skia.sk_path_line_to(path, Float32(int(pt[1])), Float32(int(pt[2])))
+move_to(path, pt) = Skia.sk_path_move_to(path, flt(pt[1]), flt(pt[2]))
+line_to(path, pt) = Skia.sk_path_line_to(path, flt(pt[1]), flt(pt[2]))
 line(canvas, from, to, width, color) = begin
   path(canvas, width=width, color=color) do path
     move_to(path, from)
@@ -198,8 +198,8 @@ function rounded_rectangle(canvas, x, y, width, height, radius; background=nothi
   path = Skia.sk_path_new()
 
   # Create a rounded rectangle using Skia's built-in function
-  rectref = Ref(Skia.sk_rect_t(Float32(int(x)), Float32(int(y)), Float32(int(x + width)), Float32(int(y + height))))
-  r = Float32(int(radius))
+  rectref = Ref(Skia.sk_rect_t(flt(x), flt(y), flt(x + width), flt(y + height)))
+  r = flt(radius)
   Skia.sk_path_add_rounded_rect(path, rectref, r, r, Skia.SK_PATH_DIRECTION_CW)
 
   if !isnothing(background)
@@ -214,7 +214,7 @@ function rounded_rectangle(canvas, x, y, width, height, radius; background=nothi
     paint = Skia.sk_paint_new()
     Skia.sk_paint_set_color(paint, sk_color(color))
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(1)) # Stroke
-    Skia.sk_paint_set_stroke_width(paint, Float32(int(stroke_width)))
+    Skia.sk_paint_set_stroke_width(paint, flt(stroke_width))
     Skia.sk_canvas_draw_path(canvas, path, paint)
     Skia.sk_paint_delete(paint)
   end

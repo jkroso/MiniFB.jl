@@ -186,6 +186,10 @@ int(p::Length) = int(convert(px, p))
 int(x::AbstractFloat) = round(Int, x)
 int(x) = x
 
+flt(p::px) = flt(p.value)
+flt(p::Length) = flt(convert(px, p))
+flt(x) = Float32(x)
+
 "Called whenever the window is resized (internal buffer size change)"
 onbuffer_resize(window, newsize) = nothing
 
