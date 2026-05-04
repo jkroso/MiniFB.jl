@@ -14,6 +14,7 @@ function __init__()
   GLFW.WindowHint(GLFW.VISIBLE, false)
   GLFW.WindowHint(GLFW.FOCUSED, false)
   GLFW.WindowHint(GLFW.FOCUS_ON_SHOW, true)
+  default_cursor[] = Cursor(GLFW.ARROW_CURSOR)
 end
 
 const vertexShaderSource = """
@@ -139,7 +140,7 @@ Screen(monitor::GLFW.Monitor=GLFW.GetPrimaryMonitor()) = begin
   Screen(monitor, Vec2{px}(px(width), px(height)), Vec2{px}(px(xpos), px(ypos)), Vec2{Float32}(xscale, yscale), name)
 end
 
-const default_cursor = Cursor(GLFW.ARROW_CURSOR)
+const default_cursor = Ref{Cursor}()
 
 @abstract struct AbstractWindow
   glfw::Vector=[] # everything needed by GLFW to manage the window
@@ -149,7 +150,7 @@ const default_cursor = Cursor(GLFW.ARROW_CURSOR)
   mouse::Vec2{px}=Vec2(0px, 0px)
   keys::Keys=Keys(0)
   animating::Bool=false
-  cursor::Cursor=default_cursor
+  cursor::Cursor=default_cursor[]
   screen::Screen=Screen()
   focus::Any=nothing
   ui::Any=nothing
