@@ -57,13 +57,13 @@ end
 drawing(f::Function, w::AbstractWindow, args...) = drawing(f, w.size, args..., scale=w.screen.content_scale)
 
 function rectangle(canvas, left, top, w, h; background=nothing, stroke=nothing, border=0px)
-  rect = Skia.sk_rect_t(Float32(int(left)), Float32(int(top)), Float32(int(left + w)), Float32(int(top + h)))
+  rectref = Ref(Skia.sk_rect_t(Float32(int(left)), Float32(int(top)), Float32(int(left + w)), Float32(int(top + h))))
 
   if !isnothing(background)
     paint = Skia.sk_paint_new()
     Skia.sk_paint_set_color(paint, sk_color(background))
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(0)) # Fill
-    Skia.sk_canvas_draw_rect(canvas, Ptr{Skia.sk_rect_t}(pointer_from_objref(Ref(rect))), paint)
+    Skia.sk_canvas_draw_rect(canvas, rectref, paint)
     Skia.sk_paint_delete(paint)
   end
 
@@ -72,7 +72,7 @@ function rectangle(canvas, left, top, w, h; background=nothing, stroke=nothing, 
     Skia.sk_paint_set_color(paint, sk_color(stroke))
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(1)) # Stroke
     Skia.sk_paint_set_stroke_width(paint, Float32(int(border)))
-    Skia.sk_canvas_draw_rect(canvas, Ptr{Skia.sk_rect_t}(pointer_from_objref(Ref(rect))), paint)
+    Skia.sk_canvas_draw_rect(canvas, rectref, paint)
     Skia.sk_paint_delete(paint)
   end
 end
@@ -84,13 +84,12 @@ function arc(canvas, center, size, start, stop)
     path = Skia.sk_path_new()
     cx, cy = int(center[1]), int(center[2])
     radius = int(size)
-    rect = Skia.sk_rect_t(Float32(cx - radius), Float32(cy - radius), Float32(cx + radius), Float32(cy + radius))
+    rectref = Ref(Skia.sk_rect_t(Float32(cx - radius), Float32(cy - radius), Float32(cx + radius), Float32(cy + radius)))
 
     start_angle = Float32(radians(start) * 180 / π)
     sweep_angle = Float32(radians(stop - start) * 180 / π)
 
-    Skia.sk_path_add_arc(path, Ptr{Skia.sk_rect_t}(pointer_from_objref(Ref(rect))),
-                         start_angle, sweep_angle)
+    Skia.sk_path_add_arc(path, rectref, start_angle, sweep_angle)
 
     paint = Skia.sk_paint_new()
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(1)) # Stroke
@@ -102,14 +101,13 @@ function arc(canvas, center, size, start, stop)
     # Arc as part of a path
     cx, cy = int(center[1]), int(center[2])
     radius = int(size)
-    rect = Skia.sk_rect_t(Float32(cx - radius), Float32(cy - radius), Float32(cx + radius), Float32(cy + radius))
+    rectref = Ref(Skia.sk_rect_t(Float32(cx - radius), Float32(cy - radius), Float32(cx + radius), Float32(cy + radius)))
 
     start_angle = Float32(radians(start) * 180 / π)
     sweep_angle = Float32(radians(stop - start) * 180 / π)
 
     # Use add_arc to create a proper arc segment
-    Skia.sk_path_add_arc(current_path, Ptr{Skia.sk_rect_t}(pointer_from_objref(Ref(rect))),
-                         start_angle, sweep_angle)
+    Skia.sk_path_add_arc(current_path, rectref, start_angle, sweep_angle)
   end
 end
 
@@ -200,9 +198,9 @@ function rounded_rectangle(canvas, x, y, width, height, radius; background=nothi
   path = Skia.sk_path_new()
 
   # Create a rounded rectangle using Skia's built-in function
-  rect = Skia.sk_rect_t(Float32(int(x)), Float32(int(y)), Float32(int(x + width)), Float32(int(y + height)))
+  rectref = Ref(Skia.sk_rect_t(Float32(int(x)), Float32(int(y)), Float32(int(x + width)), Float32(int(y + height))))
   r = Float32(int(radius))
-  Skia.sk_path_add_rounded_rect(path, Ptr{Skia.sk_rect_t}(pointer_from_objref(Ref(rect))), r, r, Skia.SK_PATH_DIRECTION_CW)
+  Skia.sk_path_add_rounded_rect(path, rectref, r, r, Skia.SK_PATH_DIRECTION_CW)
 
   if !isnothing(background)
     paint = Skia.sk_paint_new()
