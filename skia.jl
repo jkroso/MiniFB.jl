@@ -185,6 +185,29 @@ function measure_text(font::SkiaFont, str::AbstractString)
   return (text_width, descent - ascent)
 end
 
+"Vertical font metrics from Skia, in the same units as `font.size`. `ascent` is
+negative (above baseline), `descent` is positive (below baseline)."
+function font_metrics(font::SkiaFont)
+  m = Ref{Skia.sk_font_metrics_t}()
+  Skia.sk_font_get_metrics(font.raw, m)
+  metrics = m[]
+  (ascent=Float64(metrics.ascent), descent=Float64(metrics.descent),
+   capHeight=Float64(metrics.capHeight), xHeight=Float64(metrics.xHeight))
+end
+
+"Tight visual bounds of `str` rendered with `font`. Coordinates are relative
+to the draw position passed to `text()` — i.e. baseline at y=0, glyph origin at
+x=0. Side bearings show up as nonzero `left`/right whitespace inside the box."
+function text_bounds(font::SkiaFont, str::AbstractString)
+  bounds = Ref{Skia.sk_rect_t}()
+  GC.@preserve bounds begin
+    Skia.sk_font_measure_text(font.raw, pointer(str), UInt64(ncodeunits(str)),
+                              Skia.SK_TEXT_ENCODING_UTF8, pointer_from_objref(bounds), C_NULL)
+  end
+  r = bounds[]
+  (left=Float64(r.left), top=Float64(r.top), right=Float64(r.right), bottom=Float64(r.bottom))
+end
+
 move_to(path, pt) = Skia.sk_path_move_to(path, flt(pt[1]), flt(pt[2]))
 line_to(path, pt) = Skia.sk_path_line_to(path, flt(pt[1]), flt(pt[2]))
 line(canvas, from, to, width, color) = begin
@@ -224,4 +247,4 @@ end
 
 rounded_rectangle(canvas, origin, size, radius; kwargs...) = rounded_rectangle(canvas, origin[1], origin[2], size[1], size[2], radius; kwargs...)
 
-export arc, drawing, path, rectangle, line, line_to, move_to, rounded_rectangle, text, measure_text
+export arc, drawing, path, rectangle, line, line_to, move_to, rounded_rectangle, text, measure_text, text_bounds, font_metrics
