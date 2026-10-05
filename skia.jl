@@ -24,30 +24,36 @@ function drawing(f::Function, size, args..., ; scale=(2.0, 2.0))
   # Create image info
   info = Ref(Skia.sk_image_info_t(C_NULL, Skia.sk_color_type_t(4), Skia.sk_alpha_type_t(1), scaledx, scaledy))
 
-  # Create surface and canvas
-  surface = Skia.sk_surface_make_raster_n32_premul(pointer_from_objref(info), C_NULL)
-  canvas = Skia.sk_surface_get_canvas(surface)
+  # `pointer_from_objref` doesn't keep `info` alive, and newer Julia versions
+  # elide the Ref entirely, so Skia would read garbage without the preserve
+  pixels, width, height = GC.@preserve info begin
+    # Create surface and canvas
+    surface = Skia.sk_surface_make_raster_n32_premul(pointer_from_objref(info), C_NULL)
+    surface == C_NULL && error("Skia could not create a $(scaledx)×$(scaledy) surface")
+    canvas = Skia.sk_surface_get_canvas(surface)
 
-  # Scale the canvas
-  Skia.sk_canvas_scale(canvas, scalex, scaley)
+    # Scale the canvas
+    Skia.sk_canvas_scale(canvas, scalex, scaley)
 
-  # Call the drawing function
-  invokelatest(f, canvas, size, args...)
+    # Call the drawing function
+    invokelatest(f, canvas, size, args...)
 
-  # Get the image and read pixels
-  image = Skia.sk_surface_make_image_snapshot(surface)
-  width = Skia.sk_image_get_width(image)
-  height = Skia.sk_image_get_height(image)
+    # Get the image and read pixels
+    image = Skia.sk_surface_make_image_snapshot(surface)
+    width = Skia.sk_image_get_width(image)
+    height = Skia.sk_image_get_height(image)
 
-  # Create buffer and read pixels
-  pixels = Array{UInt32}(undef, width * height)
+    # Create buffer and read pixels
+    pixels = Array{UInt32}(undef, width * height)
 
-  Skia.sk_image_read_pixels(image, pointer_from_objref(info),
-                           pointer(pixels), UInt64(width * 4), Int32(0), Int32(0), Skia.sk_image_caching_hint_t(0))
+    Skia.sk_image_read_pixels(image, pointer_from_objref(info),
+                             pointer(pixels), UInt64(width * 4), Int32(0), Int32(0), Skia.sk_image_caching_hint_t(0))
 
-  # Cleanup
-  Skia.sk_image_unref(image)
-  Skia.sk_surface_unref(surface)
+    # Cleanup
+    Skia.sk_image_unref(image)
+    Skia.sk_surface_unref(surface)
+    pixels, width, height
+  end
 
   # Convert to ARGB32 format compatible with MiniFB
   result = reinterpret(ARGB32, pixels)
