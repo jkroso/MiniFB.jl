@@ -7,10 +7,10 @@ radians(a::Angle) = radians(convert(Radian, a))
 radians(a::Radian) = a.value
 radians(x) = x
 
-# Helper to convert color to sk_color_t
+# Helper to convert color to sk_color_t, which Skia reads as 0xAARRGGBB
 function sk_color(c::Colorant)
   (;r, g, b, alpha) = convert(RGBA{Colors.N0f8}, c)
-  UInt32(reinterpret(UInt8, alpha)) << 24 | UInt32(reinterpret(UInt8, b)) << 16 | UInt32(reinterpret(UInt8, g)) << 8 | UInt32(reinterpret(UInt8, r))
+  UInt32(reinterpret(UInt8, alpha)) << 24 | UInt32(reinterpret(UInt8, r)) << 16 | UInt32(reinterpret(UInt8, g)) << 8 | UInt32(reinterpret(UInt8, b))
 end
 
 sk_color(s::String) = sk_color(parse(RGBA{Colors.N0f8}, s))
@@ -21,8 +21,9 @@ function drawing(f::Function, size, args..., ; scale=(2.0, 2.0))
   scaledx = round(Int, x*scalex)
   scaledy = round(Int, y*scaley)
 
-  # Create image info
-  info = Ref(Skia.sk_image_info_t(C_NULL, Skia.sk_color_type_t(4), Skia.sk_alpha_type_t(1), scaledx, scaledy))
+  # Create image info. BGRA bytes read as a little-endian UInt32 are 0xAARRGGBB,
+  # which is the layout of ARGB32
+  info = Ref(Skia.sk_image_info_t(C_NULL, Skia.SK_COLOR_TYPE_BGRA_8888, Skia.sk_alpha_type_t(1), scaledx, scaledy))
 
   # `pointer_from_objref` doesn't keep `info` alive, and newer Julia versions
   # elide the Ref entirely, so Skia would read garbage without the preserve
