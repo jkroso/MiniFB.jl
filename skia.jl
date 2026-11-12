@@ -15,11 +15,18 @@ end
 
 sk_color(s::String) = sk_color(parse(RGBA{Colors.N0f8}, s))
 
-function drawing(f::Function, size, args..., ; scale=(2.0, 2.0))
+"""
+Draw with Skia and return the pixels. `f(canvas, size, args...)` does the
+drawing. Give it `pixels`, a buffer of the right length from an earlier call,
+and it draws into that rather than making a new one.
+"""
+function drawing(f::Function, size, args..., ; scale=(2.0, 2.0), pixels=nothing)
   (scalex, scaley) = scale
   x,y = int.(size)
   scaledx = round(Int, x*scalex)
   scaledy = round(Int, y*scaley)
+  reuse = pixels !== nothing && length(pixels) == scaledx * scaledy
+  buffer = reuse ? pixels : zeros(UInt32, scaledx * scaledy)
 
   # Create image info. BGRA bytes read as a little-endian UInt32 are 0xAARRGGBB,
   # which is the layout of ARGB32
@@ -27,41 +34,34 @@ function drawing(f::Function, size, args..., ; scale=(2.0, 2.0))
 
   # `pointer_from_objref` doesn't keep `info` alive, and newer Julia versions
   # elide the Ref entirely, so Skia would read garbage without the preserve
-  pixels, width, height = GC.@preserve info begin
-    # Create surface and canvas
-    surface = Skia.sk_surface_make_raster_n32_premul(pointer_from_objref(info), C_NULL)
+  GC.@preserve info buffer begin
+    # Skia draws straight into `buffer`, so there's nothing to copy out afterwards
+    surface = Skia.sk_surface_make_raster_direct(pointer_from_objref(info), pointer(buffer), Csize_t(scaledx * 4), C_NULL)
     surface == C_NULL && error("Skia could not create a $(scaledx)×$(scaledy) surface")
     canvas = Skia.sk_surface_get_canvas(surface)
-
-    # Scale the canvas
+    reuse && Skia.sk_canvas_clear(canvas, 0x00000000)
     Skia.sk_canvas_scale(canvas, scalex, scaley)
-
-    # Call the drawing function
     invokelatest(f, canvas, size, args...)
-
-    # Get the image and read pixels
-    image = Skia.sk_surface_make_image_snapshot(surface)
-    width = Skia.sk_image_get_width(image)
-    height = Skia.sk_image_get_height(image)
-
-    # Create buffer and read pixels
-    pixels = Array{UInt32}(undef, width * height)
-
-    Skia.sk_image_read_pixels(image, pointer_from_objref(info),
-                             pointer(pixels), UInt64(width * 4), Int32(0), Int32(0), Skia.sk_image_caching_hint_t(0))
-
-    # Cleanup
-    Skia.sk_image_unref(image)
     Skia.sk_surface_unref(surface)
-    pixels, width, height
   end
 
   # Convert to ARGB32 format compatible with MiniFB
-  result = reinterpret(ARGB32, pixels)
-  reshape(result, (width, height))' # skia is row major while MiniFB is column major
+  result = reinterpret(ARGB32, buffer)
+  reshape(result, (scaledx, scaledy))' # skia is row major while MiniFB is column major
 end
 
-drawing(f::Function, w::AbstractWindow, args...) = drawing(f, w.size, args..., scale=w.screen.content_scale)
+# The buffer each window was last drawn into. A window is drawn many times a
+# second, and a new 14MB buffer each time keeps the garbage collector busy.
+const buffers = Dict{UInt,Vector{UInt32}}()
+
+drawing(f::Function, w::AbstractWindow, args...) = begin
+  scale = w.screen.content_scale
+  x, y = int.(w.size)
+  n = round(Int, x*scale[1]) * round(Int, y*scale[2])
+  buffer = get(buffers, objectid(w), nothing)
+  (buffer === nothing || length(buffer) != n) && (buffer = buffers[objectid(w)] = zeros(UInt32, n))
+  drawing(f, w.size, args..., scale=scale, pixels=buffer)
+end
 
 function rectangle(canvas, left, top, w, h; background=nothing, stroke=nothing, border=0px)
   rectref = Ref(Skia.sk_rect_t(flt(left), flt(top), flt(left + w), flt(top + h)))

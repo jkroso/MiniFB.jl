@@ -4,6 +4,7 @@
 @use ModernGL...
 @use Colors...
 @use GLFW...
+@use LinearAlgebra: Adjoint
 
 function __init__()
   GLFW.Init()
@@ -33,8 +34,9 @@ const fragmentShaderSource = """
 in vec2 TexCoord;
 out vec4 FragColor;
 uniform sampler2D texture1;
+uniform bool by_column;
 void main() {
-    FragColor = texture(texture1, vec2(TexCoord.y, TexCoord.x));
+    FragColor = texture(texture1, by_column ? vec2(TexCoord.y, TexCoord.x) : TexCoord);
 }
 """
 
@@ -150,6 +152,10 @@ const default_cursor = Ref{Cursor}()
   mouse::Vec2{px}=Vec2(0px, 0px)
   keys::Keys=Keys(0)
   animating::Bool=false
+  # While it isn't animating, the window is only drawn again when something
+  # happens to it. Set `wake` to draw it again after that many seconds anyway,
+  # e.g. to blink a caret. 0 means wait for as long as it takes.
+  wake::Float64=0.0
   cursor::Cursor=default_cursor[]
   screen::Screen=Screen()
   focus::Any=nothing
@@ -354,7 +360,7 @@ Base.open(w::AbstractWindow) = begin
   while !GLFW.WindowShouldClose(window)
     invokelatest(redraw, w)
     yield()
-    w.animating ? GLFW.PollEvents() : GLFW.WaitEvents()
+    w.animating ? GLFW.PollEvents() : w.wake > 0 ? GLFW.WaitEvents(w.wake) : GLFW.WaitEvents()
   end
   cleanup(w)
 end
@@ -364,14 +370,38 @@ unpack(c::UInt32) = reinterpret(NTuple{4,UInt8}, c)
 unpack(m::AbstractMatrix) = unpack.(m)
 unpack(m::AbstractMatrix{RGBA{Colors.N0f8}}) = reinterpret(NTuple{4,UInt8}, m)
 
+"""
+Send a frame's pixels to the graphics card. Returns true when they were sent a
+column at a time, the way Julia stores a matrix, and false when they were sent
+a row at a time.
+"""
+upload(image) = begin
+  y, x = size(image)
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, y, x, 0, GL_RGBA, GL_UNSIGNED_BYTE, unpack(image))
+  true
+end
+
+# What `drawing` in skia.jl returns: Skia's own buffer, wrapped but not copied
+const SkiaFrame = Adjoint{ARGB32,<:Base.ReshapedArray{ARGB32,2,<:Base.ReinterpretArray{ARGB32,1,UInt32,Vector{UInt32}}}}
+
+# Skia's buffer is already rows of BGRA bytes, which the graphics card takes as
+# it is. Converting it to a matrix of RGBA colours first took about 10ms a frame
+# for a 1100×800 window on a Retina screen.
+upload(image::SkiaFrame) = begin
+  height, width = size(image)
+  pixels = parent(parent(parent(image)))::Vector{UInt32}
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels)
+  false
+end
+
 redraw(w::AbstractWindow) = begin
   window, texture, shaderProgram, VAO, VBO, EBO = w.glfw
   GLFW.MakeContextCurrent(window)
   image = invokelatest(frame, w)
-  y,x = size(image)
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, y, x, 0, GL_RGBA, GL_UNSIGNED_BYTE, unpack(image))
-  glUseProgram(shaderProgram)
   glBindTexture(GL_TEXTURE_2D, texture[])
+  by_column = upload(image)
+  glUseProgram(shaderProgram)
+  glUniform1i(glGetUniformLocation(shaderProgram, "by_column"), by_column)
   glBindVertexArray(VAO[])
   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, C_NULL)
   GLFW.SwapBuffers(window)
