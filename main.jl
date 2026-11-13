@@ -228,6 +228,17 @@ struct MouseMove
   window
 end
 
+"""
+The user typed `char`. A key press says which key went down. This says which
+character that made on the user's keyboard layout, after Shift, Option and
+dead keys: `?` from Shift and `/` on a US keyboard, or `é` from Option-E then E.
+Keys held with Cmd don't type anything.
+"""
+struct Typed
+  char::Char
+  window
+end
+
 "Called on any keyboard/mouse button press or release"
 onkey(w::AbstractWindow, event) = w.focus !== nothing ? onkey(w.focus, event) : nothing
 onkey(target, event) = nothing
@@ -238,6 +249,10 @@ to the window so it can be negative in either x or y direction
 """
 onmouse(w::AbstractWindow, event::MouseMove) = w.focus !== nothing ? onmouse(w.focus, event) : nothing
 onmouse(target, event) = nothing
+
+"Called with each character the user types, as a `Typed`"
+ontype(w::AbstractWindow, event::Typed) = w.focus !== nothing ? ontype(w.focus, event) : nothing
+ontype(target, event) = nothing
 
 "Called when either scroll wheel is moved. `delta` is a `Vec{2,px}` with horizontal,vertical order"
 onscroll(window, delta) = nothing
@@ -327,6 +342,8 @@ Base.open(w::AbstractWindow) = begin
       invokelatest(onkey, w, KeyPress{key}(keycode, is_repeat, w))
     end
   end)
+
+  GLFW.SetCharCallback(window, (_, char) -> invokelatest(ontype, w, Typed(Char(char), w)))
 
   GLFW.SetCursorPosCallback(window, function(window, x::Float64, y::Float64)
     newpos = Vec2{px}(x, y)
@@ -440,5 +457,5 @@ function getscreen(w::AbstractWindow)
   screens[i]
 end
 
-export Window, AbstractWindow, frame, redraw, onkey, KeyPress, KeyRelease, Keys, MouseMove, onopen, onmouse, onresize,
+export Window, AbstractWindow, frame, redraw, onkey, KeyPress, KeyRelease, Keys, MouseMove, Typed, ontype, onopen, onmouse, onresize,
        onreposition, Cursor, Screen

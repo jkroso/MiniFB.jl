@@ -40,7 +40,7 @@ function drawing(f::Function, size, args..., ; scale=(2.0, 2.0), pixels=nothing)
     surface == C_NULL && error("Skia could not create a $(scaledx)×$(scaledy) surface")
     canvas = Skia.sk_surface_get_canvas(surface)
     reuse && Skia.sk_canvas_clear(canvas, 0x00000000)
-    Skia.sk_canvas_scale(canvas, scalex, scaley)
+    Skia.sk_canvas_scale(canvas, Float32(scalex), Float32(scaley))
     invokelatest(f, canvas, size, args...)
     Skia.sk_surface_unref(surface)
   end
