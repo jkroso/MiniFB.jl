@@ -369,6 +369,16 @@ Base.open(w::AbstractWindow) = begin
 
   w.glfw = [window, texture, shaderProgram, VAO, VBO, EBO]
 
+  # When the size asked for doesn't fit on the screen, macOS moves the window
+  # and makes it smaller as it's placed and shown. That happens before the
+  # callbacks above are set, so they don't tell `w`. Without this, each frame
+  # is drawn at the size asked for and squeezed into the smaller window, which
+  # leaves out a row of pixels every so often, and text loses part of a letter.
+  place, room = GLFW.GetWindowPos(window), GLFW.GetWindowSize(window)
+  w.position = Vec2{px}(px(place.x), px(place.y))
+  w.size = Vec2{px}(px(room.width), px(room.height))
+  glViewport(0, 0, GLFW.GetFramebufferSize(window)...)
+
   isnothing(w.cursor) || GLFW.SetCursor(window, w.cursor.glfw)
   w.screen = getscreen(w)
   invokelatest(onopen, w)
