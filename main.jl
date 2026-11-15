@@ -266,10 +266,122 @@ onfiledrop(window, paths) = nothing
 "Called once when the window first opens"
 onopen(window) = nothing
 
+"Called once when the window has closed"
+onclose(window) = nothing
+
 "Generate a pixel buffer to display. If the size doesn't match the window then it will be stretched"
 frame(w) = nothing
 
+# --- the loop that draws the windows -----------------------------------------
+#
+# An app can have more than one window open. One loop draws them all, on the
+# thread that opened the first one. `open` gives the loop a window. The first
+# `open` runs the loop, and returns when the last window has closed. An `open`
+# after that returns at once, and the loop puts the window on the screen on its
+# next turn.
+#
+# On each turn the loop draws the windows that need it, then waits for input.
+# A window needs drawing when:
+#   - it got input since it was drawn: a key, the mouse, a scroll, a file, a new size
+#   - it's animating
+#   - its `wake` time has passed
+#   - `stale!` was called for it
+#   - the loop woke and none of those is true of any window, as it does after
+#     `GLFW.PostEmptyEvent()`. Then every window is drawn.
+# So a window isn't drawn again each time the mouse moves over another one.
+
+"The windows that are on the screen, in the order they opened"
+const windows = AbstractWindow[]
+"The windows that `open` was given, which the loop hasn't put on the screen yet"
+const waiting = AbstractWindow[]
+"The windows that show something old, by `objectid`. The loop draws them on its next turn."
+const stale = Set{UInt}()
+"When each window on the screen was last drawn, by `objectid`"
+const drawn = Dict{UInt,Float64}()
+"True while the loop runs"
+const looping = Ref(false)
+
+"Say that window `w` shows something old, so the loop draws it again on its next turn"
+stale!(w::AbstractWindow) = (push!(stale, objectid(w)); nothing)
+
+"True while window `w` is on the screen"
+Base.isopen(w::AbstractWindow) = !isempty(w.glfw)
+
+"""
+Open window `w`. The first window that's opened runs the loop that draws every
+window, so this returns when the last window has closed. While that loop
+runs, this returns at once, and the window is on the screen a moment later.
+"""
 Base.open(w::AbstractWindow) = begin
+  # GLFW can't make a window while it calls one of the handlers, and that's when an app opens
+  # its second window. So the loop makes it.
+  any(o -> o === w, waiting) || isopen(w) || push!(waiting, w)
+  looping[] && return nothing
+  looping[] = true
+  try
+    while true
+      while !isempty(waiting)
+        show!(popfirst!(waiting))
+      end
+      isempty(windows) && break
+      due = to_draw()
+      for w in copy(windows)
+        if GLFW.WindowShouldClose(w.glfw[1])
+          shut!(w)
+        elseif any(o -> o === w, due)
+          delete!(stale, objectid(w))
+          drawn[objectid(w)] = time()
+          invokelatest(redraw, w)
+        end
+      end
+      yield()
+      # A window that opened or closed, or went stale, while the others were drawn is seen to first
+      isempty(waiting) && !isempty(windows) && !any(w -> objectid(w) in stale, windows) && wait_for_input()
+    end
+  finally
+    # An error from a window ends the loop, and takes every window off the screen
+    foreach(shut!, copy(windows))
+    empty!(waiting)
+    looping[] = false
+  end
+  nothing
+end
+
+"The windows that the loop should draw on this turn"
+to_draw() = begin
+  due = filter(w -> w.animating || objectid(w) in stale || overdue(w), windows)
+  # The loop woke, and no window has a reason of its own to be drawn. So something else changed, and they all are.
+  isempty(due) ? copy(windows) : due
+end
+
+"True when window `w` asked to be drawn again after its `wake`, and that time has passed"
+overdue(w::AbstractWindow) = w.wake > 0 && time() - get(drawn, objectid(w), 0.0) >= w.wake
+
+"Wait until a window gets input, or until the first window's `wake` time. While a window animates, don't wait."
+wait_for_input() = begin
+  any(w -> w.animating, windows) && return GLFW.PollEvents()
+  now = time()
+  left = minimum((get(drawn, objectid(w), now) + w.wake - now for w in windows if w.wake > 0), init=Inf)
+  left == Inf ? GLFW.WaitEvents() : left > 0 ? GLFW.WaitEvents(left) : GLFW.PollEvents()
+end
+
+const modifiers = ((GLFW.MOD_SHIFT, Keys.shft), (GLFW.MOD_CONTROL, Keys.ctrl), (GLFW.MOD_ALT, Keys.opt), (GLFW.MOD_SUPER, Keys.cmd))
+
+"""
+Make the Shift, Control, Option and Command keys of `w` the ones that GLFW says
+are down. A window that opens while ⌘ is down never sees it go down, so
+without this the next key wouldn't count as a ⌘ shortcut there.
+"""
+modifiers!(w::AbstractWindow, mods) =
+  for (bit, key) in modifiers
+    mods & bit != 0 ? (w.keys |= key) : release!(w, key)
+  end
+
+"Note that `key` is up in window `w`"
+release!(w::AbstractWindow, key) = (key in w.keys && (w.keys ⊻= key); nothing)
+
+"Put window `w` on the screen, and tell it with `onopen`"
+show!(w::AbstractWindow) = begin
   width, height = int.(w.size)
   window = GLFW.CreateWindow(width, height, w.title)
   GLFW.MakeContextCurrent(window)
@@ -326,15 +438,18 @@ Base.open(w::AbstractWindow) = begin
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
 
+  # `redraw` sets the size of the picture for each frame. Another window's may be the one that OpenGL draws to now.
   GLFW.SetFramebufferSizeCallback(window, function(window, width, height)
-    glViewport(0, 0, width, height)
+    stale!(w)
     invokelatest(onbuffer_resize, w, (width, height))
   end)
 
-  GLFW.SetKeyCallback(window, function(window, keyenum, keycode, action, _)
+  GLFW.SetKeyCallback(window, function(window, keyenum, keycode, action, mods)
+    stale!(w)
     key = convert(Keys, keyenum)
+    modifiers!(w, mods)
     if action == GLFW.RELEASE
-      w.keys ⊻= key
+      release!(w, key)
       invokelatest(onkey, w, KeyRelease{key}(keycode, w))
     else
       is_repeat = action == GLFW.REPEAT
@@ -343,29 +458,32 @@ Base.open(w::AbstractWindow) = begin
     end
   end)
 
-  GLFW.SetCharCallback(window, (_, char) -> invokelatest(ontype, w, Typed(Char(char), w)))
+  GLFW.SetCharCallback(window, (_, char) -> (stale!(w); invokelatest(ontype, w, Typed(Char(char), w))))
 
   GLFW.SetCursorPosCallback(window, function(window, x::Float64, y::Float64)
+    stale!(w)
     newpos = Vec2{px}(x, y)
     invokelatest(onmouse, w, MouseMove(newpos, w))
     w.mouse = newpos
   end)
 
-  GLFW.SetMouseButtonCallback(window, function(window, button, action, _)
+  GLFW.SetMouseButtonCallback(window, function(window, button, action, mods)
+    stale!(w)
     key = convert(Keys, button)
+    modifiers!(w, mods)
     if action == GLFW.PRESS
       w.keys |= key
       invokelatest(onkey, w, KeyPress{key}(0, w))
     else
-      w.keys ⊻= key
+      release!(w, key)
       invokelatest(onkey, w, KeyRelease{key}(0, w))
     end
   end)
 
-  GLFW.SetWindowSizeCallback(window, (_, width, height) -> w.size = Vec2{px}(px(width), px(height)))
-  GLFW.SetWindowPosCallback(window, (_, x, y) -> w.position = Vec2{px}(px(x), px(y)))
-  GLFW.SetScrollCallback(window, (_, x, y) -> invokelatest(onscroll, w, Vec2{px}(x, y)))
-  GLFW.SetDropCallback(window, (_, paths) -> invokelatest(onfiledrop, w, paths))
+  GLFW.SetWindowSizeCallback(window, (_, width, height) -> (stale!(w); w.size = Vec2{px}(px(width), px(height))))
+  GLFW.SetWindowPosCallback(window, (_, x, y) -> (stale!(w); w.position = Vec2{px}(px(x), px(y))))
+  GLFW.SetScrollCallback(window, (_, x, y) -> (stale!(w); invokelatest(onscroll, w, Vec2{px}(x, y))))
+  GLFW.SetDropCallback(window, (_, paths) -> (stale!(w); invokelatest(onfiledrop, w, paths)))
 
   w.glfw = [window, texture, shaderProgram, VAO, VBO, EBO]
 
@@ -381,15 +499,11 @@ Base.open(w::AbstractWindow) = begin
 
   isnothing(w.cursor) || GLFW.SetCursor(window, w.cursor.glfw)
   w.screen = getscreen(w)
+  push!(windows, w)
+  stale!(w)
   invokelatest(onopen, w)
   invokelatest(onbuffer_resize, w, GLFW.GetFramebufferSize(window))
-
-  while !GLFW.WindowShouldClose(window)
-    invokelatest(redraw, w)
-    yield()
-    w.animating ? GLFW.PollEvents() : w.wake > 0 ? GLFW.WaitEvents(w.wake) : GLFW.WaitEvents()
-  end
-  cleanup(w)
+  w
 end
 
 unpack(c::Colorant) = reinterpret(NTuple{4,UInt8}, RGBA{Colors.N0f8}(c))
@@ -424,6 +538,7 @@ end
 redraw(w::AbstractWindow) = begin
   window, texture, shaderProgram, VAO, VBO, EBO = w.glfw
   GLFW.MakeContextCurrent(window)
+  glViewport(0, 0, GLFW.GetFramebufferSize(window)...)
   image = invokelatest(frame, w)
   glBindTexture(GL_TEXTURE_2D, texture[])
   by_column = upload(image)
@@ -434,17 +549,48 @@ redraw(w::AbstractWindow) = begin
   GLFW.SwapBuffers(window)
 end
 
-cleanup(w::AbstractWindow) = begin
+"Take window `w` off the screen, and tell it with `onclose`"
+shut!(w::AbstractWindow) = begin
   window, texture, shaderProgram, VAO, VBO, EBO = w.glfw
+  # What a window drew with belongs to that window
+  GLFW.MakeContextCurrent(window)
   glDeleteTextures(1, [texture[]])
   glDeleteVertexArrays(1, [VAO[]])
   glDeleteBuffers(1, [VBO[]])
   glDeleteBuffers(1, [EBO[]])
   glDeleteProgram(shaderProgram)
   GLFW.DestroyWindow(window)
+  empty!(w.glfw)
+  filter!(o -> o !== w, windows)
+  delete!(stale, objectid(w))
+  delete!(drawn, objectid(w))
+  invokelatest(onclose, w)
+  nothing
 end
 
-Base.close(w::AbstractWindow) = GLFW.SetWindowShouldClose(w.glfw[1], true)
+"""
+Close window `w`. The loop takes it off the screen on its next turn, and then
+tells it with `onclose`. A window that isn't on the screen, like one a test
+makes, is told now.
+"""
+Base.close(w::AbstractWindow) = begin
+  if isopen(w)
+    GLFW.SetWindowShouldClose(w.glfw[1], true)
+  else
+    filter!(o -> o !== w, waiting)
+    invokelatest(onclose, w)
+  end
+  nothing
+end
+
+"Bring window `w` to the front, and give it the keyboard. One that's in the Dock comes out of it."
+front!(w::AbstractWindow) = begin
+  isopen(w) || return w
+  GLFW.GetWindowAttrib(w.glfw[1], GLFW.ICONIFIED) != 0 && GLFW.RestoreWindow(w.glfw[1])
+  ccall((:glfwFocusWindow, GLFW.libglfw), Cvoid, (GLFW.Window,), w.glfw[1])
+  stale!(w)
+  w
+end
 
 """
 Get the screen where a specific window is located.
@@ -467,5 +613,5 @@ function getscreen(w::AbstractWindow)
   screens[i]
 end
 
-export Window, AbstractWindow, frame, redraw, onkey, KeyPress, KeyRelease, Keys, MouseMove, Typed, ontype, onopen, onmouse, onresize,
-       onreposition, Cursor, Screen
+export Window, AbstractWindow, frame, redraw, onkey, KeyPress, KeyRelease, Keys, MouseMove, Typed, ontype, onopen, onclose, onmouse, onresize,
+       onreposition, Cursor, Screen, stale!, front!

@@ -63,6 +63,9 @@ drawing(f::Function, w::AbstractWindow, args...) = begin
   drawing(f, w.size, args..., scale=scale, pixels=buffer)
 end
 
+"Give back the buffer that window `w` was drawn into. A window that has closed doesn't need it."
+drop_buffer!(w::AbstractWindow) = (delete!(buffers, objectid(w)); nothing)
+
 function rectangle(canvas, left, top, w, h; background=nothing, stroke=nothing, border=0px)
   rectref = Ref(Skia.sk_rect_t(flt(left), flt(top), flt(left + w), flt(top + h)))
 
@@ -254,4 +257,4 @@ end
 
 rounded_rectangle(canvas, origin, size, radius; kwargs...) = rounded_rectangle(canvas, origin[1], origin[2], size[1], size[2], radius; kwargs...)
 
-export arc, drawing, path, rectangle, line, line_to, move_to, rounded_rectangle, text, measure_text, text_bounds, font_metrics
+export arc, drawing, path, rectangle, line, line_to, move_to, rounded_rectangle, text, measure_text, text_bounds, font_metrics, drop_buffer!
