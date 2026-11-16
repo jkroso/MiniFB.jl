@@ -1,7 +1,10 @@
 @use "github.com/jkroso/Units.jl" Angle Radian
-@use "." AbstractWindow int flt
+@use "." AbstractWindow int flt Drawn drop_gpu!
 @use Colors...
 @use Skia
+@use GLFW
+@use ModernGL: GLint, glBindFramebuffer, GL_FRAMEBUFFER, glGetFramebufferAttachmentParameteriv, GL_STENCIL,
+               GL_FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE
 
 radians(a::Angle) = radians(convert(Radian, a))
 radians(a::Radian) = a.value
@@ -53,20 +56,149 @@ end
 # The buffer each window was last drawn into. A window is drawn many times a
 # second, and a new 14MB buffer each time keeps the garbage collector busy.
 const buffers = Dict{UInt,Vector{UInt32}}()
+# How many pixels each window's buffer has room for. A drag of a window's edge
+# changes its size many times a second. A new buffer for each size made the
+# garbage collector stop the window for 10 to 60 ms many times in a drag.
+# So a buffer has room for a window a quarter bigger. It changes size within
+# that room without new memory.
+const room = Dict{UInt,Int}()
 
-drawing(f::Function, w::AbstractWindow, args...) = begin
+"Draw window `w` with the CPU, into a buffer that it keeps from frame to frame, and return the pixels"
+draw_with_cpu(f::Function, w::AbstractWindow, args...) = begin
   scale = w.screen.content_scale
   x, y = int.(w.size)
   n = round(Int, x*scale[1]) * round(Int, y*scale[2])
-  buffer = get(buffers, objectid(w), nothing)
-  (buffer === nothing || length(buffer) != n) && (buffer = buffers[objectid(w)] = zeros(UInt32, n))
+  id = objectid(w)
+  # A window that becomes much smaller gives the memory back
+  if n > get(room, id, 0) || n < room[id] ÷ 2
+    room[id] = n + n ÷ 4
+    buffers[id] = sizehint!(UInt32[], room[id])
+  end
+  buffer = resize!(buffers[id], n)
   drawing(f, w.size, args..., scale=scale, pixels=buffer)
 end
 
 "Give back the buffer that window `w` was drawn into. A window that has closed doesn't need it."
-drop_buffer!(w::AbstractWindow) = (delete!(buffers, objectid(w)); nothing)
+drop_buffer!(w::AbstractWindow) = (delete!(buffers, objectid(w)); delete!(room, objectid(w)); nothing)
 
-function rectangle(canvas, left, top, w, h; background=nothing, stroke=nothing, border=0px)
+# --- drawing with the graphics card ------------------------------------------
+#
+# A window that's on the screen has an OpenGL context. Skia draws into the
+# window's own framebuffer with it, so there are no pixels to copy to the
+# graphics card. A window that isn't on the screen, like a test's, draws with
+# the CPU into a buffer, as before.
+
+"What Skia draws a window with on the graphics card"
+mutable struct GPU
+  context::Ptr{Skia.gr_direct_context_t}
+  target::Ptr{Skia.gr_backendrendertarget_t}
+  surface::Ptr{Skia.sk_surface_t}
+  size::Tuple{Int,Int}   # of the window's framebuffer, in the screen's pixels
+end
+
+"What Skia draws each window with on the graphics card, by `objectid`"
+const gpus = Dict{UInt,GPU}()
+"False to draw every window with the CPU. `MINIFB_GPU=0` sets it false when MiniFB loads."
+const use_gpu = Ref(true)
+"The windows that Skia couldn't draw with the graphics card, by `objectid`. They draw with the CPU."
+const no_gpu = Set{UInt}()
+
+"How many bits of stencil the current window's framebuffer has"
+stencil_bits() = begin
+  bits = Ref{GLint}(0)
+  glBindFramebuffer(GL_FRAMEBUFFER, 0)
+  glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_STENCIL, GL_FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE, bits)
+  Int(bits[])
+end
+
+"Let go of the surface that Skia draws window `g` on, so it can make one for a new size"
+free_surface!(g::GPU) = begin
+  g.surface == C_NULL || Skia.sk_surface_unref(g.surface)
+  g.target == C_NULL || Skia.gr_backendrendertarget_delete(g.target)
+  g.surface, g.target, g.size = C_NULL, C_NULL, (0, 0)
+  nothing
+end
+
+"""
+What Skia draws window `w` with on the graphics card, at the size it has now.
+Nothing when Skia can't. The window's OpenGL context must be the current one.
+"""
+gpu!(w::AbstractWindow) = begin
+  id = objectid(w)
+  fb = GLFW.GetFramebufferSize(w.glfw[1])
+  size = (Int(fb.width), Int(fb.height))
+  g = get(gpus, id, nothing)
+  if g === nothing
+    interface = Skia.gr_glinterface_create_native_interface()
+    interface == C_NULL && return nothing
+    context = Skia.gr_direct_context_make_gl(interface)
+    Skia.gr_glinterface_unref(interface)   # the context keeps its own reference
+    context == C_NULL && return nothing
+    g = gpus[id] = GPU(context, C_NULL, C_NULL, (0, 0))
+  end
+  if g.size != size
+    free_surface!(g)
+    info = Ref(Skia.gr_gl_framebufferinfo_t(0, 0x8058, false))   # framebuffer 0 is the window's own. 0x8058 is GL_RGBA8.
+    g.target = Skia.gr_backendrendertarget_new_gl(Cint(size[1]), Cint(size[2]), Cint(0), Cint(stencil_bits()), info)
+    g.surface = Skia.sk_surface_new_backend_render_target(g.context, g.target, Skia.GR_SURFACE_ORIGIN_BOTTOM_LEFT,
+                                                           Skia.SK_COLOR_TYPE_RGBA_8888, C_NULL, C_NULL)
+    g.surface == C_NULL && return nothing
+    g.size = size
+  end
+  g
+end
+
+"Draw window `w` with Skia on the graphics card, with `f(canvas, size, args...)`"
+draw_with_gpu(f::Function, g::GPU, w::AbstractWindow, args...) = begin
+  # MiniFB used OpenGL since Skia last drew, so Skia can't trust what it thinks is set
+  Skia.gr_direct_context_reset(g.context)
+  canvas = Skia.sk_surface_get_canvas(g.surface)
+  saves = Skia.sk_canvas_get_save_count(canvas)
+  Skia.sk_canvas_save(canvas)
+  try
+    Skia.sk_canvas_clear(canvas, 0x00000000)
+    scale = w.screen.content_scale
+    Skia.sk_canvas_scale(canvas, Float32(scale[1]), Float32(scale[2]))
+    invokelatest(f, canvas, w.size, args...)
+  finally
+    # The canvas lasts from frame to frame, so it mustn't keep this frame's scale or clip
+    Skia.sk_canvas_restore_to_count(canvas, saves)
+    Skia.gr_direct_context_flush_and_submit(g.context, false)
+  end
+  Drawn()
+end
+
+drop_gpu!(w::AbstractWindow) = begin
+  delete!(no_gpu, objectid(w))
+  g = pop!(gpus, objectid(w), nothing)
+  g === nothing && return
+  free_surface!(g)
+  Skia.gr_direct_context_release_resources_and_abandon_context(g.context)
+  Skia.gr_direct_context_unref(g.context)
+  nothing
+end
+
+"""
+Draw window `w` with `f(canvas, size, args...)`. A window that's on the screen
+draws with the graphics card, and this returns `Drawn()`. Otherwise it draws
+with the CPU and returns the pixels.
+"""
+drawing(f::Function, w::AbstractWindow, args...) = begin
+  id = objectid(w)
+  if use_gpu[] && isopen(w) && !(id in no_gpu)
+    GLFW.MakeContextCurrent(w.glfw[1])
+    g = try
+      gpu!(w)
+    catch e
+      @warn "Skia couldn't draw the window with the graphics card, so it draws it with the CPU" exception=(e, catch_backtrace())
+      nothing
+    end
+    g === nothing ? push!(no_gpu, id) : return draw_with_gpu(f, g, w, args...)
+  end
+  draw_with_cpu(f, w, args...)
+end
+
+function rectangle(canvas, left, top, w, h; background=nothing, stroke=nothing, border=0)
   rectref = Ref(Skia.sk_rect_t(flt(left), flt(top), flt(left + w), flt(top + h)))
 
   if !isnothing(background)
@@ -155,6 +287,7 @@ const fontmgr = Ref{Ptr{Skia.sk_font_mgr_t}}()
 
 function __init__()
   fontmgr[] = Skia.sk_fontmgr_ref_default()
+  use_gpu[] = get(ENV, "MINIFB_GPU", "1") != "0"
 end
 
 mutable struct SkiaFont

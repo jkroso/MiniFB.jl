@@ -12,6 +12,8 @@ function __init__()
   GLFW.WindowHint(GLFW.CONTEXT_VERSION_MINOR, 3)
   GLFW.WindowHint(GLFW.OPENGL_PROFILE, GLFW.OPENGL_CORE_PROFILE)
   GLFW.WindowHint(GLFW.TRANSPARENT_FRAMEBUFFER, false)
+  GLFW.WindowHint(GLFW.STENCIL_BITS, 8)   # Skia draws some shapes with the stencil when it draws with the graphics card
+  GLFW.WindowHint(GLFW.SAMPLES, 0)
   GLFW.WindowHint(GLFW.VISIBLE, false)
   GLFW.WindowHint(GLFW.FOCUSED, false)
   GLFW.WindowHint(GLFW.FOCUS_ON_SHOW, true)
@@ -289,6 +291,9 @@ frame(w) = nothing
 #   - the loop woke and none of those is true of any window, as it does after
 #     `GLFW.PostEmptyEvent()`. Then every window is drawn.
 # So a window isn't drawn again each time the mouse moves over another one.
+# A window that gets a new size while the loop waits is drawn then, by
+# `draw_now!`, since the wait lasts as long as the user drags its edge. When
+# its frames are slow, it skips some sizes so the edge keeps up with the mouse.
 
 "The windows that are on the screen, in the order they opened"
 const windows = AbstractWindow[]
@@ -298,6 +303,10 @@ const waiting = AbstractWindow[]
 const stale = Set{UInt}()
 "When each window on the screen was last drawn, by `objectid`"
 const drawn = Dict{UInt,Float64}()
+"How many seconds each window's last frame took to draw, by `objectid`"
+const took = Dict{UInt,Float64}()
+"The windows whose newest size has no frame yet, by `objectid`. `draw_now!` skipped it."
+const behind = Set{UInt}()
 "True while the loop runs"
 const looping = Ref(false)
 
@@ -330,8 +339,7 @@ Base.open(w::AbstractWindow) = begin
           shut!(w)
         elseif any(o -> o === w, due)
           delete!(stale, objectid(w))
-          drawn[objectid(w)] = time()
-          invokelatest(redraw, w)
+          draw!(w)
         end
       end
       yield()
@@ -357,12 +365,93 @@ end
 "True when window `w` asked to be drawn again after its `wake`, and that time has passed"
 overdue(w::AbstractWindow) = w.wake > 0 && time() - get(drawn, objectid(w), 0.0) >= w.wake
 
+"True while the loop waits for input. No frame is being drawn then, so a handler that GLFW calls can draw one."
+const idle = Ref(false)
+
 "Wait until a window gets input, or until the first window's `wake` time. While a window animates, don't wait."
 wait_for_input() = begin
-  any(w -> w.animating, windows) && return GLFW.PollEvents()
-  now = time()
-  left = minimum((get(drawn, objectid(w), now) + w.wake - now for w in windows if w.wake > 0), init=Inf)
-  left == Inf ? GLFW.WaitEvents() : left > 0 ? GLFW.WaitEvents(left) : GLFW.PollEvents()
+  idle[] = true
+  try
+    any(w -> w.animating, windows) && return GLFW.PollEvents()
+    now = time()
+    left = minimum((get(drawn, objectid(w), now) + w.wake - now for w in windows if w.wake > 0), init=Inf)
+    left == Inf ? GLFW.WaitEvents() : left > 0 ? GLFW.WaitEvents(left) : GLFW.PollEvents()
+  finally
+    idle[] = false
+  end
+end
+
+"The most seconds that `draw_now!` waits between frames, while the user drags the edge of a window"
+const MOST_REST = 0.1
+
+"Draw window `w`, and note when its frame started and how long it took"
+draw!(w::AbstractWindow) = begin
+  id = objectid(w)
+  start = drawn[id] = time()
+  delete!(behind, id)
+  invokelatest(redraw, w)
+  took[id] = time() - start
+  nothing
+end
+
+"""
+Draw window `w` now, if the loop is waiting for input. While the user drags an
+edge of a window, macOS keeps the loop in that wait until the mouse button
+goes up. Until then it stretches the window's last frame to fit the new size.
+The handler for a new size calls this, so the window gets a frame at its new size.
+
+The edge of the window can't move while a frame is drawn. So when the window
+hasn't rested since its last frame for as long as that frame took, this skips
+the frame, and the window draws its newest size when it has rested that long.
+Then a slow frame slows the edge down by half at most. It rests `MOST_REST`
+seconds at most, since one frame can be far slower than the rest, like the
+first one, which Julia compiles.
+"""
+draw_now!(w::AbstractWindow) = begin
+  idle[] || return
+  id = objectid(w)
+  rested = time() - get(drawn, id, 0.0) - get(took, id, 0.0)   # since its last frame ended
+  rest = min(get(took, id, 0.0), MOST_REST)
+  if rested < rest && later!(rest - rested)
+    push!(behind, id)
+    return
+  end
+  # A frame that changes the window's size calls the handler again. This stops that from drawing a frame inside a frame.
+  idle[] = false
+  try
+    draw!(w)
+    idle[] = true
+  catch
+    # The window is still stale, so the loop draws it again when the wait ends. That draw reports the error.
+  end
+  nothing
+end
+
+"True while `catch_up` is queued to run"
+const queued = Ref(false)
+
+"Draw each window whose newest size has no frame yet"
+catch_up(_) = begin
+  queued[] = false
+  for w in copy(windows)
+    objectid(w) in behind && draw_now!(w)
+  end
+  nothing
+end
+
+"""
+Ask macOS to run `catch_up` in `seconds`, on this thread. macOS runs it while
+the user still drags the window's edge, since it handles the drag on this
+thread too. False where there's no way to ask, and then `draw_now!` draws at once.
+"""
+later!(seconds) = begin
+  Sys.isapple() || return false
+  queued[] && return true
+  queued[] = true
+  when = ccall(:dispatch_time, UInt64, (UInt64, Int64), 0, round(Int64, seconds * 1e9))   # 0 is now
+  ccall(:dispatch_after_f, Cvoid, (UInt64, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
+        when, cglobal(:_dispatch_main_q), C_NULL, @cfunction(catch_up, Cvoid, (Ptr{Cvoid},)))
+  true
 end
 
 const modifiers = ((GLFW.MOD_SHIFT, Keys.shft), (GLFW.MOD_CONTROL, Keys.ctrl), (GLFW.MOD_ALT, Keys.opt), (GLFW.MOD_SUPER, Keys.cmd))
@@ -480,7 +569,11 @@ show!(w::AbstractWindow) = begin
     end
   end)
 
-  GLFW.SetWindowSizeCallback(window, (_, width, height) -> (stale!(w); w.size = Vec2{px}(px(width), px(height))))
+  GLFW.SetWindowSizeCallback(window, function(_, width, height)
+    stale!(w)
+    w.size = Vec2{px}(px(width), px(height))
+    draw_now!(w)
+  end)
   GLFW.SetWindowPosCallback(window, (_, x, y) -> (stale!(w); w.position = Vec2{px}(px(x), px(y))))
   GLFW.SetScrollCallback(window, (_, x, y) -> (stale!(w); invokelatest(onscroll, w, Vec2{px}(x, y))))
   GLFW.SetDropCallback(window, (_, paths) -> (stale!(w); invokelatest(onfiledrop, w, paths)))
@@ -535,19 +628,35 @@ upload(image::SkiaFrame) = begin
   false
 end
 
+"""
+What `frame` returns when it drew the window itself, with the graphics card,
+like `drawing` in skia.jl does. Then there are no pixels to send to the card.
+"""
+struct Drawn end
+
 redraw(w::AbstractWindow) = begin
   window, texture, shaderProgram, VAO, VBO, EBO = w.glfw
   GLFW.MakeContextCurrent(window)
   glViewport(0, 0, GLFW.GetFramebufferSize(window)...)
   image = invokelatest(frame, w)
-  glBindTexture(GL_TEXTURE_2D, texture[])
-  by_column = upload(image)
-  glUseProgram(shaderProgram)
-  glUniform1i(glGetUniformLocation(shaderProgram, "by_column"), by_column)
-  glBindVertexArray(VAO[])
-  glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, C_NULL)
+  if !(image isa Drawn)
+    # Skia may have drawn an earlier frame, and left these on
+    glDisable(GL_SCISSOR_TEST); glDisable(GL_STENCIL_TEST); glDisable(GL_BLEND)
+    glBindTexture(GL_TEXTURE_2D, texture[])
+    by_column = upload(image)
+    glUseProgram(shaderProgram)
+    glUniform1i(glGetUniformLocation(shaderProgram, "by_column"), by_column)
+    glBindVertexArray(VAO[])
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, C_NULL)
+  end
   GLFW.SwapBuffers(window)
 end
+
+"""
+Called just before window `w` leaves the screen, while its OpenGL context is
+the current one. skia.jl lets go of what it drew the window with.
+"""
+drop_gpu!(w) = nothing
 
 "Take window `w` off the screen, and tell it with `onclose`"
 shut!(w::AbstractWindow) = begin
@@ -559,11 +668,14 @@ shut!(w::AbstractWindow) = begin
   glDeleteBuffers(1, [VBO[]])
   glDeleteBuffers(1, [EBO[]])
   glDeleteProgram(shaderProgram)
+  invokelatest(drop_gpu!, w)
   GLFW.DestroyWindow(window)
   empty!(w.glfw)
   filter!(o -> o !== w, windows)
   delete!(stale, objectid(w))
   delete!(drawn, objectid(w))
+  delete!(took, objectid(w))
+  delete!(behind, objectid(w))
   invokelatest(onclose, w)
   nothing
 end
