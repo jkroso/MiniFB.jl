@@ -61,7 +61,7 @@ To test if the user did a cmd+click you write:
 @BitSet Keys """
   tilde minus equal left_bracket right_bracket semicolon apostrophe comma period slash backslash times plus
   a:z 0:9 num(0:9) f(1:25) tab capslock enter shft cmd opt ctrl escape delete backspace space fn home pageup
-  pagedown _end clear eject insert left right up down mouse_left mouse_right mouse_middle
+  pagedown _end clear eject insert left right up down mouse_left mouse_right mouse_middle mouse_back mouse_forward
 """
 
 const keymap = Dict(GLFW.KEY_ENTER => Keys.enter,
@@ -102,8 +102,13 @@ for k in instances(GLFW.Key)
 end
 
 Base.convert(::Type{Keys}, k::GLFW.Key) = keymap[k]
+# The fourth and fifth buttons are the two at the side of a mouse, which go back and forward in a web
+# browser. Any other button counts as the middle one.
 Base.convert(::Type{Keys}, b::GLFW.MouseButton) = begin
-  b == GLFW.MOUSE_BUTTON_1 ? Keys.mouse_left : b == GLFW.MOUSE_BUTTON_2 ? Keys.mouse_right : Keys.mouse_middle
+  b == GLFW.MOUSE_BUTTON_1 ? Keys.mouse_left :
+  b == GLFW.MOUSE_BUTTON_2 ? Keys.mouse_right :
+  b == GLFW.MOUSE_BUTTON_4 ? Keys.mouse_back :
+  b == GLFW.MOUSE_BUTTON_5 ? Keys.mouse_forward : Keys.mouse_middle
 end
 
 "Adds auto memory management to GLFW's Cursor type"
