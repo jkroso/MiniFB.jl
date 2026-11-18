@@ -474,10 +474,28 @@ modifiers!(w::AbstractWindow, mods) =
 "Note that `key` is up in window `w`"
 release!(w::AbstractWindow, key) = (key in w.keys && (w.keys ⊻= key); nothing)
 
+"""
+Tell macOS that the pixels in `window` are sRGB, the colour space of CSS colours,
+hex colours and most pictures. macOS then converts them for each screen, as
+browsers do. Without this, macOS sends the numbers to the screen as they are, and
+on a wide-gamut screen (a MacBook's, or a Dell U4021QW) every colour looks more
+saturated than in a browser: `#F38020` shows as (243,128,32) on the Dell where
+WebKit shows (226,137,54).
+"""
+srgb!(window::GLFW.Window) = begin
+  Sys.isapple() || return window
+  sel(name) = ccall(:sel_registerName, Ptr{Cvoid}, (Cstring,), name)
+  nswindow = ccall((:glfwGetCocoaWindow, GLFW.libglfw), Ptr{Cvoid}, (GLFW.Window,), window)
+  NSColorSpace = ccall(:objc_getClass, Ptr{Cvoid}, (Cstring,), "NSColorSpace")
+  srgb = ccall(:objc_msgSend, Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}), NSColorSpace, sel("sRGBColorSpace"))
+  ccall(:objc_msgSend, Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), nswindow, sel("setColorSpace:"), srgb)
+  window
+end
+
 "Put window `w` on the screen, and tell it with `onopen`"
 show!(w::AbstractWindow) = begin
   width, height = int.(w.size)
-  window = GLFW.CreateWindow(width, height, w.title)
+  window = srgb!(GLFW.CreateWindow(width, height, w.title))
   GLFW.MakeContextCurrent(window)
   GLFW.SwapInterval(1)
   GLFW.SetWindowPos(window, int.(w.position)...)
