@@ -33,7 +33,7 @@ function drawing(f::Function, size, args..., ; scale=(2.0, 2.0), pixels=nothing)
 
   # Create image info. BGRA bytes read as a little-endian UInt32 are 0xAARRGGBB,
   # which is the layout of ARGB32
-  info = Ref(Skia.sk_image_info_t(C_NULL, Skia.SK_COLOR_TYPE_BGRA_8888, Skia.sk_alpha_type_t(1), scaledx, scaledy))
+  info = Ref(Skia.sk_image_info_t(srgb[], Skia.SK_COLOR_TYPE_BGRA_8888, Skia.sk_alpha_type_t(1), scaledx, scaledy))
 
   # `pointer_from_objref` doesn't keep `info` alive, and newer Julia versions
   # elide the Ref entirely, so Skia would read garbage without the preserve
@@ -141,7 +141,7 @@ gpu!(w::AbstractWindow) = begin
     info = Ref(Skia.gr_gl_framebufferinfo_t(0, 0x8058, false))   # framebuffer 0 is the window's own. 0x8058 is GL_RGBA8.
     g.target = Skia.gr_backendrendertarget_new_gl(Cint(size[1]), Cint(size[2]), Cint(0), Cint(stencil_bits()), info)
     g.surface = Skia.sk_surface_new_backend_render_target(g.context, g.target, Skia.GR_SURFACE_ORIGIN_BOTTOM_LEFT,
-                                                           Skia.SK_COLOR_TYPE_RGBA_8888, C_NULL, C_NULL)
+                                                           Skia.SK_COLOR_TYPE_RGBA_8888, srgb[], C_NULL)
     g.surface == C_NULL && return nothing
     g.size = size
   end
@@ -292,8 +292,20 @@ end
 
 const fontmgr = Ref{Ptr{Skia.sk_font_mgr_t}}()
 
+"""
+Skia's sRGB colour space. A surface made with it says its pixels are sRGB, as
+the window's are (see `srgb!` in main.jl). Skia then converts a picture with a
+colour profile of its own, such as a Display P3 photo from an iPhone, as it
+draws it. On a surface with no colour space Skia copies the picture's numbers
+as they are, and the photo looks dull. Colours given as numbers are sRGB
+already, so they're drawn the same either way. Skia can't release one, so this
+process makes one and keeps it.
+"""
+const srgb = Ref{Ptr{Skia.sk_color_space_t}}(C_NULL)
+
 function __init__()
   fontmgr[] = Skia.sk_fontmgr_ref_default()
+  srgb[] = Skia.sk_colorspace_new_srgb()
   use_gpu[] = get(ENV, "MINIFB_GPU", "1") != "0"
 end
 

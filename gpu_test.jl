@@ -28,7 +28,9 @@ pixel(w, x, y) = begin
   Tuple(Int.(p))
 end
 
-const ORANGE, BLUE = (255, 128, 0, 255), (0, 0, 255, 255)
+# Every screen can show this blue. A wide-gamut screen such as a Dell U4021QW
+# can't show pure sRGB blue, so a picture of it comes back with some green.
+const ORANGE, BLUE = (255, 128, 0, 255), (32, 64, 224, 255)
 
 "For each frame: what `drawing` gave back, and the colours at the middle, inside the square, and under it"
 const frames = []
@@ -37,7 +39,10 @@ const shown = Ref{Any}(nothing)
 
 """
 The colour of a pixel of the PNG picture at `path`, at `fx` and `fy` of the
-way across and down it, as red, green, blue and alpha from 0 to 255
+way across and down it, as sRGB red, green, blue and alpha from 0 to 255.
+A picture of the screen has the screen's colour profile, and macOS converted
+the window's sRGB colours for that screen. So Skia converts them back here,
+and the test passes on a wide-gamut screen too.
 """
 png_pixel(path, fx, fy) = begin
   bytes = read(path)
@@ -45,7 +50,7 @@ png_pixel(path, fx, fy) = begin
   image = SK.Skia.sk_image_new_from_encoded(data)
   SK.Skia.sk_data_unref(data)
   wide, high = SK.Skia.sk_image_get_width(image), SK.Skia.sk_image_get_height(image)
-  info = Ref(SK.Skia.sk_image_info_t(C_NULL, SK.Skia.SK_COLOR_TYPE_RGBA_8888, SK.Skia.sk_alpha_type_t(2), 1, 1))   # 2 is unpremultiplied
+  info = Ref(SK.Skia.sk_image_info_t(SK.srgb[], SK.Skia.SK_COLOR_TYPE_RGBA_8888, SK.Skia.sk_alpha_type_t(2), 1, 1))   # 2 is unpremultiplied
   p = zeros(UInt8, 4)
   GC.@preserve info p SK.Skia.sk_image_read_pixels(image, pointer_from_objref(info), pointer(p), Csize_t(4),
     Cint(round(Int, fx * wide)), Cint(round(Int, fy * high)), SK.Skia.sk_image_caching_hint_t(0))
@@ -83,7 +88,7 @@ MiniFB.frame(w::Window) = begin
   SK.use_gpu[] = length(frames) < 2
   out = drawing(w) do canvas, size
     SK.Skia.sk_canvas_clear(canvas, 0xffff8000)   # orange
-    rectangle(canvas, 20, 20, 40, 40, background=RGB(0, 0, 1))   # a blue square near the top left
+    rectangle(canvas, 20, 20, 40, 40, background=RGB(BLUE[1:3] ./ 255...))   # a blue square near the top left
   end
   push!(frames, (out, pixel(w, 150, 100), pixel(w, 40, 40), pixel(w, 40, 160)))
   length(frames) == 3 && ccall(:dispatch_after_f, Cvoid, (UInt64, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
