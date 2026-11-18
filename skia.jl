@@ -231,9 +231,10 @@ function arc(canvas, center, size, start, stop)
     start_angle = Float32(radians(start) * 180 / π)
     sweep_angle = Float32(radians(stop - start) * 180 / π)
 
-    Skia.sk_path_add_arc(path, rectref, start_angle, sweep_angle)
+    Skia.sk_path_arc_to_with_oval(path, rectref, start_angle, sweep_angle, true)
 
     paint = Skia.sk_paint_new()
+    Skia.sk_paint_set_antialias(paint, true)  # a curve shows steps unless its edge pixels are blended
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(1)) # Stroke
     Skia.sk_canvas_draw_path(canvas, path, paint)
 
@@ -248,8 +249,8 @@ function arc(canvas, center, size, start, stop)
     start_angle = Float32(radians(start) * 180 / π)
     sweep_angle = Float32(radians(stop - start) * 180 / π)
 
-    # Use add_arc to create a proper arc segment
-    Skia.sk_path_add_arc(current_path, rectref, start_angle, sweep_angle)
+    # A new piece of the path, not joined to the end of the last one
+    Skia.sk_path_arc_to_with_oval(current_path, rectref, start_angle, sweep_angle, true)
   end
 end
 
@@ -258,13 +259,18 @@ arc(canvas, center, size, range) = arc(canvas, center, size, first(range), last(
 # Global path for use within drawing functions
 current_path = nothing
 
-function path(f::Function, canvas; close=false, background=nothing, color=nothing, width=0)
+"""
+Fill or stroke the path that `f` draws. `smooth` blends the pixels along its
+edges, so that a slant or a curve doesn't show steps.
+"""
+function path(f::Function, canvas; close=false, background=nothing, color=nothing, width=0, smooth=true)
   path = Skia.sk_path_new()
   f(path) # Call the drawing function
   close && Skia.sk_path_close(path)
 
   if !isnothing(background)
     paint = Skia.sk_paint_new()
+    Skia.sk_paint_set_antialias(paint, smooth)
     Skia.sk_paint_set_color(paint, sk_color(background))
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(0)) # Fill
     Skia.sk_canvas_draw_path(canvas, path, paint)
@@ -273,6 +279,7 @@ function path(f::Function, canvas; close=false, background=nothing, color=nothin
 
   if !isnothing(color)
     paint = Skia.sk_paint_new()
+    Skia.sk_paint_set_antialias(paint, smooth)
     Skia.sk_paint_set_color(paint, sk_color(color))
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(1)) # Stroke
     Skia.sk_paint_set_stroke_width(paint, flt(width))
@@ -353,8 +360,11 @@ end
 
 move_to(path, pt) = Skia.sk_path_move_to(path, flt(pt[1]), flt(pt[2]))
 line_to(path, pt) = Skia.sk_path_line_to(path, flt(pt[1]), flt(pt[2]))
+# A line that goes straight across or straight down stays sharp, like a caret. Blended,
+# it would go soft where it starts part way through a pixel. A slanted line is blended.
 line(canvas, from, to, width, color) = begin
-  path(canvas, width=width, color=color) do path
+  slanted = from[1] != to[1] && from[2] != to[2]
+  path(canvas, width=width, color=color, smooth=slanted) do path
     move_to(path, from)
     line_to(path, to)
   end
@@ -367,9 +377,13 @@ function rounded_rectangle(canvas, x, y, width, height, radius; background=nothi
   rectref = Ref(Skia.sk_rect_t(flt(x), flt(y), flt(x + width), flt(y + height)))
   r = flt(radius)
   Skia.sk_path_add_rounded_rect(path, rectref, r, r, Skia.SK_PATH_DIRECTION_CW)
+  # A curve needs its edge pixels blended, or it shows steps. A square box stays sharp: two
+  # that meet part way through a pixel would each blend it, and leave a faint line between them.
+  smooth = r > 0
 
   if !isnothing(background)
     paint = Skia.sk_paint_new()
+    Skia.sk_paint_set_antialias(paint, smooth)
     Skia.sk_paint_set_color(paint, sk_color(background))
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(0)) # Fill
     Skia.sk_canvas_draw_path(canvas, path, paint)
@@ -378,6 +392,7 @@ function rounded_rectangle(canvas, x, y, width, height, radius; background=nothi
 
   if !isnothing(color)
     paint = Skia.sk_paint_new()
+    Skia.sk_paint_set_antialias(paint, smooth)
     Skia.sk_paint_set_color(paint, sk_color(color))
     Skia.sk_paint_set_style(paint, Skia.sk_paint_style_t(1)) # Stroke
     Skia.sk_paint_set_stroke_width(paint, flt(stroke_width))
