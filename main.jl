@@ -126,7 +126,28 @@ mutable struct Cursor
   end
 end
 
-destroy(c::Cursor) = GLFW.is_initialized() && GLFW.DestroyCursor(c.glfw)
+"The cursors that nothing uses any more, which the loop destroys between frames"
+const unused_cursors = GLFW.Cursor[]
+const unused_lock = Threads.SpinLock()   # a SpinLock, since a finalizer can't wait for a lock that yields
+
+"""
+The finalizer of a Cursor. Julia runs it on whichever thread collects the
+garbage, such as hot_reload.jl's watcher, and maybe while GLFW calls a handler.
+GLFW destroys a cursor only on the main thread and outside its handlers, so
+this puts the cursor on a list for the loop.
+"""
+destroy(c::Cursor) = (lock(() -> push!(unused_cursors, c.glfw), unused_lock); nothing)
+
+"Destroy the cursors that nothing uses any more. Only the loop calls this, on the main thread, between frames."
+destroy_unused_cursors!() = begin
+  gone = lock(unused_lock) do
+    list = copy(unused_cursors)
+    empty!(unused_cursors)
+    list
+  end
+  GLFW.is_initialized() && foreach(GLFW.DestroyCursor, gone)
+  nothing
+end
 
 """
 Represents the screen/monitor where the window is displayed.
@@ -334,6 +355,7 @@ Base.open(w::AbstractWindow) = begin
   looping[] = true
   try
     while true
+      destroy_unused_cursors!()
       while !isempty(waiting)
         show!(popfirst!(waiting))
       end
@@ -355,6 +377,7 @@ Base.open(w::AbstractWindow) = begin
     # An error from a window ends the loop, and takes every window off the screen
     foreach(shut!, copy(windows))
     empty!(waiting)
+    destroy_unused_cursors!()
     looping[] = false
   end
   nothing
