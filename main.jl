@@ -403,10 +403,24 @@ wait_for_input() = begin
     any(w -> w.animating, windows) && return GLFW.PollEvents()
     now = time()
     left = minimum((get(drawn, objectid(w), now) + w.wake - now for w in windows if w.wake > 0), init=Inf)
-    left == Inf ? GLFW.WaitEvents() : left > 0 ? GLFW.WaitEvents(left) : GLFW.PollEvents()
+    left == Inf ? wait_events() : left > 0 ? wait_events(left) : GLFW.PollEvents()
   finally
     idle[] = false
   end
+end
+
+"""
+Wait for input, as GLFW's `WaitEvents` does, for no more than `seconds`.
+Julia's garbage collector can run while this waits. Without that, a task in
+another thread waits at each of its collections until the main thread stops
+waiting here. Code that made a lot of garbage ran 19 times slower that way.
+A handler that GLFW calls while it waits runs as usual.
+"""
+wait_events(seconds=Inf) = begin
+  # GLFW's input functions are only for the main thread
+  Threads.threadid() == 1 || error("MiniFB waits for input on the main thread only")
+  isinf(seconds) ? @ccall(gc_safe=true, GLFW.libglfw.glfwWaitEvents()::Cvoid) :
+                   @ccall(gc_safe=true, GLFW.libglfw.glfwWaitEventsTimeout(seconds::Cdouble)::Cvoid)
 end
 
 "The most seconds that `draw_now!` waits between frames, while the user drags the edge of a window"
